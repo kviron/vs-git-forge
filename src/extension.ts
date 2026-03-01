@@ -2,24 +2,32 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+class GitForgeTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
+	getChildren(): vscode.TreeItem[] {
+		return [
+			new vscode.TreeItem('Добро пожаловать в Git Forge', vscode.TreeItemCollapsibleState.None),
+		];
+	}
+
+	getTreeItem(element: vscode.TreeItem): vscode.TreeItem {
+		return element;
+	}
+}
+
 export function activate(context: vscode.ExtensionContext) {
+	console.log('Extension "vs-git-forge" is now active!');
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "vs-git-forge" is now active!');
+	const treeProvider = new GitForgeTreeProvider();
+	const treeDisposable = vscode.window.registerTreeDataProvider(
+		'vs-git-forge.gitForgeView',
+		treeProvider
+	);
+	context.subscriptions.push(treeDisposable);
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('vs-git-forge.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
+	const cmdDisposable = vscode.commands.registerCommand('vs-git-forge.helloWorld', () => {
 		vscode.window.showInformationMessage('Hello World from Git Forge!');
 	});
-
-	context.subscriptions.push(disposable);
+	context.subscriptions.push(cmdDisposable);
 }
 
 // This method is called when your extension is deactivated

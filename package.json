@@ -17,7 +17,24 @@
         "command": "vs-git-forge.helloWorld",
         "title": "Hello World"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "gitForge",
+          "title": "Git Forge",
+          "icon": "resources/panel-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "gitForge": [
+        {
+          "id": "vs-git-forge.gitForgeView",
+          "name": "Git Forge"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
