@@ -16,6 +16,10 @@
       {
         "command": "vs-git-forge.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "vs-git-forge.openGitForge",
+        "title": "Open Git Forge"
       }
     ],
     "viewsContainers": {
