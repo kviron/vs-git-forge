@@ -31,6 +31,10 @@ export function activate(context: vscode.ExtensionContext) {
 			void vscode.commands.executeCommand('vs-git-forge.gitForgeView.focus');
 		}
 	});
+	// При старте редактора: если раздел Git Forge в Activity Bar уже открыт — открыть вкладку внизу
+	if (sidebarTreeView.visible) {
+		void vscode.commands.executeCommand('vs-git-forge.gitForgeView.focus');
+	}
 	context.subscriptions.push(sidebarTreeView);
 
 	const cmdDisposable = vscode.commands.registerCommand('vs-git-forge.helloWorld', () => {
