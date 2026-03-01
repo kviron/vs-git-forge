@@ -18,12 +18,20 @@ export function activate(context: vscode.ExtensionContext) {
 	console.log('Extension "vs-git-forge" is now active!');
 
 	const treeProvider = new GitForgeTreeProvider();
+	// Панель внизу (вкладка рядом с Терминалом)
 	context.subscriptions.push(
 		vscode.window.registerTreeDataProvider('vs-git-forge.gitForgeView', treeProvider)
 	);
-	context.subscriptions.push(
-		vscode.window.registerTreeDataProvider('vs-git-forge.gitForgeSidebarView', treeProvider)
-	);
+	// Боковая панель (Activity Bar) — при открытии автоматически показываем вкладку Git Forge внизу
+	const sidebarTreeView = vscode.window.createTreeView('vs-git-forge.gitForgeSidebarView', {
+		treeDataProvider: treeProvider,
+	});
+	sidebarTreeView.onDidChangeVisibility((e) => {
+		if (e.visible) {
+			void vscode.commands.executeCommand('vs-git-forge.gitForgeView.focus');
+		}
+	});
+	context.subscriptions.push(sidebarTreeView);
 
 	const cmdDisposable = vscode.commands.registerCommand('vs-git-forge.helloWorld', () => {
 		vscode.window.showInformationMessage('Hello World from Git Forge!');
