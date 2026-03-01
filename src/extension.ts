@@ -18,11 +18,12 @@ export function activate(context: vscode.ExtensionContext) {
 	console.log('Extension "vs-git-forge" is now active!');
 
 	const treeProvider = new GitForgeTreeProvider();
-	const treeDisposable = vscode.window.registerTreeDataProvider(
-		'vs-git-forge.gitForgeView',
-		treeProvider
+	context.subscriptions.push(
+		vscode.window.registerTreeDataProvider('vs-git-forge.gitForgeView', treeProvider)
 	);
-	context.subscriptions.push(treeDisposable);
+	context.subscriptions.push(
+		vscode.window.registerTreeDataProvider('vs-git-forge.gitForgeSidebarView', treeProvider)
+	);
 
 	const cmdDisposable = vscode.commands.registerCommand('vs-git-forge.helloWorld', () => {
 		vscode.window.showInformationMessage('Hello World from Git Forge!');

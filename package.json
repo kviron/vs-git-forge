@@ -25,12 +25,25 @@
           "title": "Git Forge",
           "icon": "resources/panel-icon.svg"
         }
+      ],
+      "activitybar": [
+        {
+          "id": "gitForgeSidebar",
+          "title": "Git Forge",
+          "icon": "resources/panel-icon.svg"
+        }
       ]
     },
     "views": {
       "gitForge": [
         {
           "id": "vs-git-forge.gitForgeView",
+          "name": "Git Forge"
+        }
+      ],
+      "gitForgeSidebar": [
+        {
+          "id": "vs-git-forge.gitForgeSidebarView",
           "name": "Git Forge"
         }
       ]
