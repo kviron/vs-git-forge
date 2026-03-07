@@ -1,6 +1,5 @@
 import { createEffect } from 'solid-js';
 import {
-  VsChevronLeft,
   VsAdd,
   VsRefresh,
   VsTrash,
@@ -24,7 +23,7 @@ import { log } from '../../shared/logger';
 const ICON_SIZE = 16;
 
 const TOOLBAR_ITEMS = [
-  { icon: VsChevronLeft, titleKey: 'toolbar.hidePanel' as const },
+  { icon: '<>', titleKey: 'toolbar.applyPanelLayout' as const },
   { icon: VsAdd, title: 'New branch' },
   { icon: VsRefresh, title: 'Update selected' },
   { icon: VsTrash, titleKey: 'toolbar.deleteBranch' as const },
@@ -103,6 +102,14 @@ export function BranchesPaneToolbar(props: BranchesPaneToolbarProps) {
     });
   };
 
+  const handleApplyPanelLayout = () => {
+    postMessageToHost({
+      type: 'command',
+      command: 'applyPanelSettings',
+      params: {},
+    });
+  };
+
   return (
     <div class="branches-pane-toolbar" role="toolbar">
       {TOOLBAR_ITEMS.map((item, index) => {
@@ -117,23 +124,28 @@ export function BranchesPaneToolbar(props: BranchesPaneToolbarProps) {
             />
           );
         }
-        const IconComponent = item.icon;
+        const isFirstButton = index === 0;
+        const iconProp = isFirstButton ? (item as { icon: string }).icon : undefined;
+        const IconComponent = typeof item.icon === 'string' ? null : item.icon;
         const isNewBranch = index === NEW_BRANCH_ICON_INDEX;
         const isUpdateSelected = index === UPDATE_SELECTED_ICON_INDEX;
         const isUpdateDisabled = isUpdateSelected && !updateEnabled;
-        const onClick = isNewBranch
-          ? handleNewBranch
-          : isUpdateSelected
-            ? updateEnabled
-              ? handleUpdateSelected
-              : undefined
-            : undefined;
+        const onClick = isFirstButton
+          ? handleApplyPanelLayout
+          : isNewBranch
+            ? handleNewBranch
+            : isUpdateSelected
+              ? updateEnabled
+                ? handleUpdateSelected
+                : undefined
+              : undefined;
         return (
           <IconButton
-            iconSlot={<IconComponent size={ICON_SIZE} />}
+            icon={iconProp}
+            iconSlot={IconComponent ? <IconComponent size={ICON_SIZE} /> : undefined}
             title={title}
             active={index === ACTIVE_ICON_INDEX}
-            disabled={!deleteEnabled}
+            disabled={index === DELETE_BRANCH_ICON_INDEX ? !deleteEnabled : false}
             onClick={onClick}
           />
         );

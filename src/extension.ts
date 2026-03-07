@@ -1476,6 +1476,35 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
           return;
         }
         if (msg.type === "command" && msg.command) {
+          if (msg.command === "applyPanelSettings") {
+            // Сначала вызываем команды API — без записи в settings.json, работает в VS Code и Cursor
+            const run = (commandId: string, ...args: unknown[]) =>
+              vscode.commands.executeCommand(commandId, ...args).then(() => true, () => false);
+
+            await run("workbench.action.positionPanelBottom");
+            await run("workbench.action.toggleMaximizedPanel"); // включить развёрнутую панель (toggle)
+            await run("workbench.action.setActivityBarPosition", "left"); // vertical = слева
+            await run("workbench.action.setPanelAlignment", "justify"); // панель на всю ширину (если команда есть)
+
+            // Настройки — только если ещё не заданы (для сохранения между сессиями)
+            const config = vscode.workspace.getConfiguration("workbench");
+            const updates: Thenable<void>[] = [];
+            if (config.get("panel.defaultLocation") !== "bottom") {
+              updates.push(config.update("panel.defaultLocation", "bottom", vscode.ConfigurationTarget.Global));
+            }
+            if (config.get("panel.opensMaximized") !== "always") {
+              updates.push(config.update("panel.opensMaximized", "always", vscode.ConfigurationTarget.Global));
+            }
+            if (config.get("activityBar.orientation") !== "vertical") {
+              updates.push(config.update("activityBar.orientation", "vertical", vscode.ConfigurationTarget.Global));
+            }
+            const isCursor = typeof vscode.env.appName === "string" && vscode.env.appName.includes("Cursor");
+            if (isCursor && config.get("panel.align") !== "justify") {
+              updates.push(config.update("panel.align", "justify", vscode.ConfigurationTarget.Global));
+            }
+            await Promise.all(updates);
+            return;
+          }
           const repo = await this.repoManager.getCurrentRepo();
           if (!repo) {
             return;

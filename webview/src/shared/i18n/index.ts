@@ -29,6 +29,7 @@ const bundles: Record<Locale, Record<string, string>> = {
     "toolbar.visibility": "Visibility",
     "toolbar.search": "Search",
     "toolbar.hidePanel": "Hide panel",
+    "toolbar.applyPanelLayout": "Apply panel layout (bottom, full width)",
     "toolbar.deleteBranch": "Delete branch",
   },
   ru: {
@@ -54,6 +55,7 @@ const bundles: Record<Locale, Record<string, string>> = {
     "toolbar.visibility": "Видимость",
     "toolbar.search": "Поиск",
     "toolbar.hidePanel": "Скрыть панель",
+    "toolbar.applyPanelLayout": "Выставить панель редактора (внизу, на всю ширину)",
     "toolbar.deleteBranch": "Удалить ветку",
   },
 };
