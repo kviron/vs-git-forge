@@ -29,6 +29,7 @@
   "createTag.validateEmpty": "Enter tag name",
   "createTag.validateInvalid": "Tag name can only contain letters, numbers, /, _, ., -",
   "createTag.created": "Tag \"{0}\" created on commit {1}",
+  "tagContext.noHead": "Not on a branch (detached HEAD). Switch to a branch first.",
   "api.repoNotFound": "Git repository not found. Open a folder with a repository or install the Git extension.",
   "api.unknownMethod": "Unknown method: {0}",
   "changedFiles.filesCount": "{0} files",

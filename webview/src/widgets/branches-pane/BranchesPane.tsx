@@ -114,6 +114,7 @@ export function BranchesPane(props: BranchesPaneProps) {
             <TagList
               tags={filteredTags()}
               selectedTag={props.selectedTag ?? null}
+              currentBranchName={props.currentBranch !== '—' ? props.currentBranch : null}
               onSelectTag={props.onSelectTag}
             />
           </>

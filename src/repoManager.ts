@@ -73,7 +73,7 @@ export async function getGitApi(): Promise<GitAPI | null> {
   const ext = vscode.extensions.getExtension<{
     getAPI(version: number): GitAPI;
   }>("vscode.git");
-  if (!ext) return null;
+  if (!ext) {return null;}
   try {
     return ext.isActive
       ? ext.exports.getAPI(1)
@@ -99,8 +99,8 @@ export class RepoManager implements vscode.Disposable {
     this._onDidChangeRepos.event;
 
   private async ensureApi(): Promise<GitAPI | null> {
-    if (this.api) return this.api;
-    if (!this.apiPromise) this.apiPromise = getGitApi();
+    if (this.api) {return this.api;}
+    if (!this.apiPromise) {this.apiPromise = getGitApi();}
     this.api = await this.apiPromise;
     if (this.api && !this.didOpenSub) {
       this.didOpenSub = this.api.onDidOpenRepository(() => {
@@ -114,7 +114,7 @@ export class RepoManager implements vscode.Disposable {
   }
 
   private getReposSync(): GitRepository[] {
-    if (!this.api?.repositories) return [];
+    if (!this.api?.repositories) {return [];}
     return [...this.api.repositories];
   }
 
@@ -144,8 +144,8 @@ export class RepoManager implements vscode.Disposable {
    */
   getRepoContainingFile(filePath: string): GitRepository | null {
     const repos = this.getReposSync();
-    if (repos.length === 0) return null;
-    if (repos.length === 1) return repos[0];
+    if (repos.length === 0) {return null;}
+    if (repos.length === 1) {return repos[0];}
     let found: GitRepository | null = null;
     for (const r of repos) {
       const root = r.rootUri.fsPath;
@@ -180,11 +180,11 @@ export class RepoManager implements vscode.Disposable {
    */
   async getCurrentRepo(): Promise<GitRepository | null> {
     const api = await this.ensureApi();
-    if (!api) return null;
+    if (!api) {return null;}
 
     const repos = this.getReposSync();
     const picked = this.pickRepoFromList(repos);
-    if (picked) return picked;
+    if (picked) {return picked;}
 
     return new Promise<GitRepository | null>((resolve) => {
       const timeout = setTimeout(() => {
@@ -205,12 +205,12 @@ export class RepoManager implements vscode.Disposable {
   private pickRepoFromList(
     repos: ReadonlyArray<GitRepository>,
   ): GitRepository | null {
-    if (repos.length === 0) return null;
-    if (repos.length === 1) return repos[0];
+    if (repos.length === 0) {return null;}
+    if (repos.length === 1) {return repos[0];}
     const activeUri = vscode.window.activeTextEditor?.document?.uri;
     if (activeUri) {
       const repo = this.getRepoContainingFile(activeUri.fsPath);
-      if (repo) return repo;
+      if (repo) {return repo;}
     }
     return repos[0];
   }

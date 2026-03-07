@@ -7,16 +7,82 @@ const TAG_ICON_SIZE = 16;
 interface TagListItemProps {
   tag: Tag;
   isSelected?: boolean;
+  /** Имя текущей ветки (HEAD) для пункта «Merge into» */
+  currentBranchName?: string | null;
   onSelect?: (tag: Tag) => void;
 }
 
 export function TagListItem(props: TagListItemProps) {
+  const tagName = () => props.tag.name;
+  const currentBranch = () => props.currentBranchName ?? null;
+  const canMerge = () => {
+    const cur = currentBranch();
+    return Boolean(cur && cur !== '—');
+  };
+
   const onContextMenu = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     const menu = getContextMenu();
     menu.show(
       [
+        // Группа 1: Checkout
+        [
+          {
+            title: 'Checkout',
+            visible: true,
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'checkoutTag',
+                params: { tagName: tagName() },
+              });
+            },
+          },
+        ],
+        // Группа 2: Show Diff with Working Tree
+        [
+          {
+            title: 'Show Diff with Working Tree',
+            visible: true,
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'showDiffWithWorkingTree',
+                params: { branchRef: tagName() },
+              });
+            },
+          },
+        ],
+        // Группа 3: Merge into current branch
+        [
+          {
+            title: `Merge '${tagName()}' into '${currentBranch() ?? ''}'`,
+            visible: canMerge(),
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'mergeTagIntoCurrent',
+                params: { tagName: tagName() },
+              });
+            },
+          },
+        ],
+        // Группа 4: Push to origin
+        [
+          {
+            title: 'Push to origin',
+            visible: true,
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'pushTag',
+                params: { tagName: tagName() },
+              });
+            },
+          },
+        ],
+        // Группа 5: Delete
         [
           {
             title: 'Delete',
@@ -25,7 +91,7 @@ export function TagListItem(props: TagListItemProps) {
               postMessageToHost({
                 type: 'command',
                 command: 'deleteTag',
-                params: { tagName: props.tag.name },
+                params: { tagName: tagName() },
               });
             },
           },

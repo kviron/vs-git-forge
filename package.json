@@ -1,7 +1,7 @@
 {
   "name": "vs-git-forge",
   "displayName": "Git Forge",
-  "description": "",
+  "description": "Git UI panel: branches, tags, commit history, diff. Early version.",
   "version": "0.0.1",
   "engines": {
     "vscode": ">=1.85.0"

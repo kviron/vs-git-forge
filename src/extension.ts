@@ -144,7 +144,7 @@ async function initBranchStatusBar(
 
 /** Получить теги через ApiRepository.getRefs() (state.refs устарел). */
 async function getTagRefs(repo: GitRepository): Promise<GitRef[]> {
-  if (typeof repo.getRefs !== "function") return [];
+  if (typeof repo.getRefs !== "function") {return [];}
   try {
     const refs = await repo.getRefs({ pattern: "refs/tags/*" });
     return refs ?? [];
@@ -384,7 +384,7 @@ class ChangedFilesDecorationProvider implements vscode.FileDecorationProvider {
   provideFileDecoration(uri: vscode.Uri): vscode.ProviderResult<vscode.FileDecoration> {
     const key = path.normalize(uri.fsPath);
     const status = this.uriToStatus.get(key);
-    if (!status) return undefined;
+    if (!status) {return undefined;}
     const themeId = GIT_STATUS_THEME_IDS[status];
     return { color: new vscode.ThemeColor(themeId) };
   }
@@ -431,7 +431,7 @@ class ChangedFilesTreeProvider
       ...f,
       path: this.normalize(f.path),
     }));
-    if (this.repoRoot != null) {
+    if (this.repoRoot !== null && this.repoRoot !== undefined) {
       this.decorationProvider.setUriStatuses(
         this.repoRoot,
         this.files,
@@ -452,7 +452,7 @@ class ChangedFilesTreeProvider
         ? `${element.path}/`
         : undefined
       : "";
-    if (prefix === undefined) return [];
+    if (prefix === undefined) {return [];}
 
     if (!prefix) {
       const items: ChangedFileTreeNode[] = [];
@@ -470,7 +470,7 @@ class ChangedFilesTreeProvider
           });
         } else {
           const segment = rest.slice(0, nextSlash);
-          if (seen.has(segment)) continue;
+          if (seen.has(segment)) {continue;}
           seen.add(segment);
           items.push({
             kind: "folder",
@@ -484,7 +484,7 @@ class ChangedFilesTreeProvider
         const bLabel = b.kind === "folder" ? b.segment : b.name;
         const aIsFolder = a.kind === "folder";
         const bIsFolder = b.kind === "folder";
-        if (aIsFolder !== bIsFolder) return (bIsFolder ? 1 : 0) - (aIsFolder ? 1 : 0);
+        if (aIsFolder !== bIsFolder) {return (bIsFolder ? 1 : 0) - (aIsFolder ? 1 : 0);}
         return aLabel.localeCompare(bLabel, undefined, { sensitivity: "base" });
       });
       return items;
@@ -493,7 +493,7 @@ class ChangedFilesTreeProvider
     const items: ChangedFileTreeNode[] = [];
     const seen = new Set<string>();
     for (const f of this.files) {
-      if (!f.path.startsWith(prefix)) continue;
+      if (!f.path.startsWith(prefix)) {continue;}
       const rest = f.path.slice(prefix.length);
       const nextSlash = rest.indexOf("/");
       if (nextSlash === -1) {
@@ -506,7 +506,7 @@ class ChangedFilesTreeProvider
         });
       } else {
         const segment = rest.slice(0, nextSlash);
-        if (seen.has(segment)) continue;
+        if (seen.has(segment)) {continue;}
         seen.add(segment);
         items.push({
           kind: "folder",
@@ -520,7 +520,7 @@ class ChangedFilesTreeProvider
       const bLabel = b.kind === "folder" ? b.segment : b.kind === "file" ? b.name : "";
       const aIsFolder = a.kind === "folder";
       const bIsFolder = b.kind === "folder";
-      if (aIsFolder !== bIsFolder) return (bIsFolder ? 1 : 0) - (aIsFolder ? 1 : 0);
+      if (aIsFolder !== bIsFolder) {return (bIsFolder ? 1 : 0) - (aIsFolder ? 1 : 0);}
       return aLabel.localeCompare(bLabel, undefined, { sensitivity: "base" });
     });
     return items;
@@ -528,7 +528,7 @@ class ChangedFilesTreeProvider
 
   getTreeItem(element: ChangedFileTreeNode): vscode.TreeItem {
     const virtualPath =
-      this.repoRoot != null
+      this.repoRoot !== null && this.repoRoot !== undefined
         ? path.join(
             this.repoRoot,
             ChangedFilesTreeProvider.VIRTUAL_PREFIX,
@@ -547,7 +547,7 @@ class ChangedFilesTreeProvider
         count === 1
           ? vscode.l10n.t("changedFiles.oneFile")
           : vscode.l10n.t("changedFiles.filesCount", String(count));
-      if (virtualPath != null) {
+      if (virtualPath !== null && virtualPath !== undefined) {
         item.resourceUri = vscode.Uri.file(virtualPath);
       } else {
         item.iconPath = new vscode.ThemeIcon("folder");
@@ -556,7 +556,7 @@ class ChangedFilesTreeProvider
     }
     const item = new vscode.TreeItem(element.name);
     item.description = element.status;
-    if (virtualPath != null) {
+    if (virtualPath !== null && virtualPath !== undefined) {
       item.resourceUri = vscode.Uri.file(virtualPath);
     } else {
       const iconId =
@@ -845,22 +845,22 @@ async function handleApiRequest(
           const shortName = (b.name ?? "").replace(/^refs\/heads\//, "").trim();
           const displayName = shortName || (b.name ?? "");
           const isCurrent =
-            currentShort != null &&
+            currentShort !== null && currentShort !== undefined &&
             (shortName === currentShort || (b.name ?? "") === headName);
           const isMain =
             displayName === "master" || displayName === "main";
           let behind =
-            gb.behind != null && gb.behind > 0 ? gb.behind : undefined;
+            gb.behind !== null && gb.behind !== undefined && gb.behind > 0 ? gb.behind : undefined;
           let hasUpstream = false;
           const upstreamRef =
-            gb.upstream?.remote != null && gb.upstream?.name != null
+            gb.upstream?.remote !== null && gb.upstream?.remote !== undefined && gb.upstream?.name !== null && gb.upstream?.name !== undefined
               ? `${gb.upstream.remote}/${gb.upstream.name}`
               : getBranchUpstreamRef(cwd, displayName);
           if (upstreamRef) {
             hasUpstream = true;
             if (behind === undefined) {
               const count = getBranchBehindCount(cwd, displayName, upstreamRef);
-              if (count != null && count > 0) behind = count;
+              if (count !== null && count !== undefined && count > 0) {behind = count;}
             }
           }
           return {
@@ -869,8 +869,8 @@ async function handleApiRequest(
             commit: b.commit,
             isCurrent,
             isMain,
-            ...(behind != null ? { behind } : {}),
-            ...(gb.ahead != null && gb.ahead > 0 ? { ahead: gb.ahead } : {}),
+            ...(behind !== null && behind !== undefined ? { behind } : {}),
+            ...(gb.ahead !== null && gb.ahead !== undefined && gb.ahead > 0 ? { ahead: gb.ahead } : {}),
             ...(hasUpstream ? { hasUpstream: true } : {}),
             ...(gb.upstream ? { upstream: { remote: gb.upstream.remote, name: gb.upstream.name } } : {}),
           };
@@ -980,22 +980,22 @@ async function handleApiRequest(
           const shortName = (b.name ?? "").replace(/^refs\/heads\//, "").trim();
           const displayName = shortName || (b.name ?? "");
           const isCurrent =
-            currentShort != null &&
+            currentShort !== null && currentShort !== undefined &&
             (shortName === currentShort || (b.name ?? "") === headName);
           const isMain =
             displayName === "master" || displayName === "main";
           let behind =
-            gb.behind != null && gb.behind > 0 ? gb.behind : undefined;
+            gb.behind !== null && gb.behind !== undefined && gb.behind > 0 ? gb.behind : undefined;
           let hasUpstream = false;
           const upstreamRef =
-            gb.upstream?.remote != null && gb.upstream?.name != null
+            gb.upstream?.remote !== null && gb.upstream?.remote !== undefined && gb.upstream?.name !== null && gb.upstream?.name !== undefined
               ? `${gb.upstream.remote}/${gb.upstream.name}`
               : getBranchUpstreamRef(cwd, displayName);
           if (upstreamRef) {
             hasUpstream = true;
             if (behind === undefined) {
               const count = getBranchBehindCount(cwd, displayName, upstreamRef);
-              if (count != null && count > 0) behind = count;
+              if (count !== null && count !== undefined && count > 0) {behind = count;}
             }
           }
           return {
@@ -1004,8 +1004,8 @@ async function handleApiRequest(
             commit: b.commit,
             isCurrent,
             isMain,
-            ...(behind != null ? { behind } : {}),
-            ...(gb.ahead != null && gb.ahead > 0 ? { ahead: gb.ahead } : {}),
+            ...(behind !== null && behind !== undefined ? { behind } : {}),
+            ...(gb.ahead !== null && gb.ahead !== undefined && gb.ahead > 0 ? { ahead: gb.ahead } : {}),
             ...(hasUpstream ? { hasUpstream: true } : {}),
             ...(gb.upstream ? { upstream: { remote: gb.upstream.remote, name: gb.upstream.name } } : {}),
           };
@@ -1052,13 +1052,13 @@ async function handleApiRequest(
               .replace(/^refs\/heads\//, "")
               .replace(/^refs\/remotes\//, "")
               .trim();
-            if (!short) continue;
+            if (!short) {continue;}
             let list = refsByCommit.get(r.commit);
             if (!list) {
               list = [];
               refsByCommit.set(r.commit, list);
             }
-            if (!list.includes(short)) list.push(short);
+            if (!list.includes(short)) {list.push(short);}
           }
         }
         const webviewCommits: WebviewCommit[] = commits.map((c) => ({
@@ -1242,7 +1242,7 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
     );
     if (result.error) {
       void vscode.window.showErrorMessage(result.error);
-    } else if (result.data != null) {
+    } else if (result.data !== null && result.data !== undefined) {
       this.notifyGitStateChanged();
     }
   }
@@ -1457,7 +1457,7 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
           } else if (msg.command === "deleteRemoteBranch") {
             const branchRef = typeof p.branchRef === "string" ? p.branchRef : "";
             const remote = typeof p.remote === "string" ? p.remote : "origin";
-            if (!branchRef) return;
+            if (!branchRef) {return;}
             const branchName = branchRef.includes("/")
               ? branchRef.replace(/^[^/]+\//, "")
               : branchRef;
@@ -1473,7 +1473,7 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
             }
           } else if (msg.command === "deleteTag") {
             const tagName = typeof p.tagName === "string" ? p.tagName.trim() : "";
-            if (!tagName) return;
+            if (!tagName) {return;}
             try {
               execSync(`git tag -d ${JSON.stringify(tagName)}`, {
                 cwd: repoRoot,
@@ -1484,10 +1484,47 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
               log.errorException(err, "deleteTag");
               void vscode.window.showErrorMessage(err instanceof Error ? err.message : String(err));
             }
+          } else if (msg.command === "checkoutTag") {
+            const tagName = typeof p.tagName === "string" ? p.tagName.trim() : "";
+            if (!tagName) {return;}
+            try {
+              execSync(`git checkout ${JSON.stringify(tagName)}`, {
+                cwd: repoRoot,
+                encoding: "utf8",
+              });
+              this.notifyGitStateChanged();
+            } catch (err) {
+              log.errorException(err, "checkoutTag");
+              void vscode.window.showErrorMessage(err instanceof Error ? err.message : String(err));
+            }
+          } else if (msg.command === "mergeTagIntoCurrent") {
+            const tagName = typeof p.tagName === "string" ? p.tagName.trim() : "";
+            if (!tagName) {return;}
+            const head = repo.state.HEAD?.name;
+            if (!head) {
+              void vscode.window.showErrorMessage(vscode.l10n.t("tagContext.noHead"));
+              return;
+            }
+            try {
+              execSync(`git merge ${JSON.stringify(tagName)}`, {
+                cwd: repoRoot,
+                encoding: "utf8",
+              });
+              this.notifyGitStateChanged();
+            } catch (err) {
+              log.errorException(err, "mergeTagIntoCurrent");
+              void vscode.window.showErrorMessage(err instanceof Error ? err.message : String(err));
+            }
+          } else if (msg.command === "pushTag") {
+            const tagName = typeof p.tagName === "string" ? p.tagName.trim() : "";
+            if (!tagName) {return;}
+            const term = vscode.window.createTerminal({ cwd: repoRoot, name: "Git Push" });
+            term.show();
+            term.sendText(`git push origin ${JSON.stringify(tagName)}`);
           } else if (msg.command === "checkoutAndRebase") {
             const branchRef = typeof p.branchRef === "string" ? p.branchRef : "";
             const ontoRef = typeof p.ontoBranchRef === "string" ? p.ontoBranchRef : "";
-            if (!branchRef || !ontoRef) return;
+            if (!branchRef || !ontoRef) {return;}
             const branchName = branchRef.includes("/") ? branchRef.replace(/^[^/]+\//, "") : branchRef;
             const ontoName = ontoRef.includes("/") ? ontoRef.replace(/^[^/]+\//, "") : ontoRef;
             try {
@@ -1501,20 +1538,20 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
           } else if (msg.command === "compareBranches") {
             const branchRef = typeof p.branchRef === "string" ? p.branchRef : "";
             const otherRef = typeof p.otherBranchRef === "string" ? p.otherBranchRef : "";
-            if (!branchRef || !otherRef) return;
+            if (!branchRef || !otherRef) {return;}
             const term = vscode.window.createTerminal({ cwd: repoRoot, name: "Git Diff" });
             term.show();
             term.sendText(`git diff ${JSON.stringify(branchRef)} ${JSON.stringify(otherRef)}`);
           } else if (msg.command === "showDiffWithWorkingTree") {
             const branchRef = typeof p.branchRef === "string" ? p.branchRef : "";
-            if (!branchRef) return;
+            if (!branchRef) {return;}
             const term = vscode.window.createTerminal({ cwd: repoRoot, name: "Git Diff" });
             term.show();
             term.sendText(`git diff ${JSON.stringify(branchRef)}`);
           } else if (msg.command === "rebaseOnto") {
             const toRebaseRef = typeof p.branchToRebaseRef === "string" ? p.branchToRebaseRef : "";
             const ontoRef = typeof p.ontoBranchRef === "string" ? p.ontoBranchRef : "";
-            if (!toRebaseRef || !ontoRef) return;
+            if (!toRebaseRef || !ontoRef) {return;}
             const toRebaseName = toRebaseRef.includes("/") ? toRebaseRef.replace(/^[^/]+\//, "") : toRebaseRef;
             const ontoName = ontoRef.includes("/") ? ontoRef.replace(/^[^/]+\//, "") : ontoRef;
             try {
@@ -1528,7 +1565,7 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
           } else if (msg.command === "mergeInto") {
             const sourceRef = typeof p.sourceBranchRef === "string" ? p.sourceBranchRef : "";
             const targetRef = typeof p.targetBranchRef === "string" ? p.targetBranchRef : "";
-            if (!sourceRef || !targetRef) return;
+            if (!sourceRef || !targetRef) {return;}
             const sourceName = sourceRef.includes("/") ? sourceRef.replace(/^[^/]+\//, "") : sourceRef;
             const targetName = targetRef.includes("/") ? targetRef.replace(/^[^/]+\//, "") : targetRef;
             try {
@@ -1541,25 +1578,25 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
             }
           } else if (msg.command === "pushBranch") {
             const branchRef = typeof p.branchRef === "string" ? p.branchRef : "";
-            if (!branchRef) return;
+            if (!branchRef) {return;}
             const branchName = branchRef.includes("/") ? branchRef.replace(/^[^/]+\//, "") : branchRef;
             const term = vscode.window.createTerminal({ cwd: repoRoot, name: "Git Push" });
             term.show();
             term.sendText(`git push origin ${JSON.stringify(branchName)}`);
           } else if (msg.command === "renameBranch") {
             const branchRef = typeof p.branchRef === "string" ? p.branchRef : "";
-            if (!branchRef) return;
+            if (!branchRef) {return;}
             const oldName = branchRef.includes("/") ? branchRef.replace(/^[^/]+\//, "") : branchRef;
             const newName = await vscode.window.showInputBox({
               title: vscode.l10n.t("renameBranch.title"),
               prompt: vscode.l10n.t("renameBranch.prompt"),
               value: oldName,
               validateInput(value) {
-                if (!value?.trim()) return vscode.l10n.t("renameBranch.nameEmpty");
+                if (!value?.trim()) {return vscode.l10n.t("renameBranch.nameEmpty");}
                 return null;
               },
             });
-            if (newName == null || newName.trim() === "" || newName.trim() === oldName) return;
+            if (newName === null || newName === undefined || newName.trim() === "" || newName.trim() === oldName) {return;}
             try {
               execSync(`git branch -m ${JSON.stringify(oldName)} ${JSON.stringify(newName.trim())}`, {
                 cwd: repoRoot,
@@ -1597,7 +1634,7 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
                 return null;
               },
             });
-            if (newMessage == null || newMessage.trim() === "") {
+            if (newMessage === null || newMessage === undefined || newMessage.trim() === "") {
               return;
             }
             try {
@@ -1696,7 +1733,7 @@ function findFilePathInRevision(
       if (isRename && i + 2 < parts.length) {
         const oldPath = parts[i + 1].replace(/\\/g, "/");
         const newPath = parts[i + 2].replace(/\\/g, "/");
-        if (newPath === pathNorm) return oldPath;
+        if (newPath === pathNorm) {return oldPath;}
         i += 3;
       } else if (i + 1 < parts.length) {
         i += 2;
@@ -1869,7 +1906,7 @@ function runActivate(context: vscode.ExtensionContext): void {
     gitForgeProvider.notifyGitStateChanged();
   };
   void repoManager.getGitApi().then((git) => {
-    if (!git) return;
+    if (!git) {return;}
     for (const repo of git.repositories) {
       context.subscriptions.push(repo.state.onDidChange(setupGitStateWatchers));
     }
@@ -1952,7 +1989,7 @@ function runActivate(context: vscode.ExtensionContext): void {
         oldFilePath?: string,
       ) => {
         const repo = await repoManager.getCurrentRepo();
-        if (!repo) return;
+        if (!repo) {return;}
         const root = repo.rootUri.fsPath;
         let fromHash: string;
         let toHash: string;

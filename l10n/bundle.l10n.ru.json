@@ -29,6 +29,7 @@
   "createTag.validateEmpty": "Введите имя тега",
   "createTag.validateInvalid": "Имя тега может содержать только буквы, цифры, /, _, ., -",
   "createTag.created": "Тег «{0}» создан на коммите {1}",
+  "tagContext.noHead": "Не на ветке (detached HEAD). Сначала переключитесь на ветку.",
   "api.repoNotFound": "Git-репозиторий не найден. Откройте папку с репозиторием или установите расширение Git.",
   "api.unknownMethod": "Неизвестный метод: {0}",
   "changedFiles.filesCount": "{0} файлов",

@@ -6,6 +6,8 @@ import { TagListItem } from '../../entities/tag';
 interface TagListProps {
   tags: Tag[];
   selectedTag: Tag | null;
+  /** Имя текущей ветки (HEAD) для контекстного меню «Merge into» */
+  currentBranchName?: string | null;
   onSelectTag?: (tag: Tag) => void;
   defaultExpanded?: boolean;
 }
@@ -32,6 +34,7 @@ export function TagList(props: TagListProps) {
             <TagListItem
               tag={tag}
               isSelected={props.selectedTag != null && props.selectedTag.name === tag.name}
+              currentBranchName={props.currentBranchName}
               onSelect={props.onSelectTag}
             />
           ))}
