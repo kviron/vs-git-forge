@@ -27,6 +27,7 @@ export function BranchListItem(props: BranchListItemProps) {
       classList={{
         selected: props.branch.isSelected,
         current: props.branch.isCurrent,
+        main: props.branch.isMain,
         favorite: props.branch.isFavorite,
       }}
       style={{ 'padding-left': `${12 + level() * 12}px` }}
@@ -57,11 +58,16 @@ export function BranchListItem(props: BranchListItemProps) {
       )}
       <span
         class="branch-list-item__icon"
-        classList={{ 'branch-list-item__icon--current': props.branch.isCurrent }}
+        classList={{
+          'branch-list-item__icon--current': props.branch.isCurrent,
+          'branch-list-item__icon--main': props.branch.isMain && !props.branch.isCurrent,
+        }}
         aria-hidden="true"
       >
         {props.branch.isCurrent ? (
           <VsTag size={BRANCH_ICON_SIZE} />
+        ) : props.branch.isMain ? (
+          <VsStarFull size={BRANCH_ICON_SIZE} />
         ) : (
           <VsGitBranch size={BRANCH_ICON_SIZE} />
         )}

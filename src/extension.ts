@@ -1,5 +1,5 @@
 // The module 'vscode' contains the VS Code extensibility API
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 import * as path from "path";
 import * as vscode from "vscode";
 
@@ -182,16 +182,13 @@ async function getGitApi(): Promise<GitAPI | null> {
   }
 }
 
-async function getGitRepo(): Promise<GitRepository | null> {
-  const api = await getGitApi();
-  const repos = api?.repositories ?? [];
-  if (repos.length === 0) {
-    return null;
-  }
-  if (repos.length === 1) {
-    return repos[0] as GitRepository;
-  }
-  // Несколько репозиториев: берём тот, в котором открыт активный файл, иначе первый
+const GIT_REPO_WAIT_TIMEOUT_MS = 5000;
+
+function pickRepoFromList(
+  repos: ReadonlyArray<GitRepository>,
+): GitRepository | null {
+  if (repos.length === 0) return null;
+  if (repos.length === 1) return repos[0] as GitRepository;
   const activeUri = vscode.window.activeTextEditor?.document?.uri;
   if (activeUri) {
     const repo = repos.find((r) => {
@@ -201,11 +198,31 @@ async function getGitRepo(): Promise<GitRepository | null> {
         activeUri.fsPath === root || activeUri.fsPath.startsWith(normalized)
       );
     });
-    if (repo) {
-      return repo as GitRepository;
-    }
+    if (repo) return repo as GitRepository;
   }
   return repos[0] as GitRepository;
+}
+
+async function getGitRepo(): Promise<GitRepository | null> {
+  const api = await getGitApi();
+  if (!api) return null;
+
+  const repos = api.repositories ?? [];
+  const picked = pickRepoFromList(repos);
+  if (picked) return picked;
+
+  return new Promise<GitRepository | null>((resolve) => {
+    const timeout = setTimeout(() => {
+      sub.dispose();
+      resolve(null);
+    }, GIT_REPO_WAIT_TIMEOUT_MS);
+
+    const sub = api.onDidOpenRepository((repo) => {
+      clearTimeout(timeout);
+      sub.dispose();
+      resolve(repo as GitRepository);
+    });
+  });
 }
 
 /** Получить теги: через getRefs (если есть) или из state.refs. */
@@ -332,6 +349,7 @@ interface WebviewBranch {
   name: string;
   remote?: string;
   isCurrent?: boolean;
+  isMain?: boolean;
   children?: WebviewBranch[];
 }
 interface WebviewTag {
@@ -457,11 +475,24 @@ async function handleApiRequest(
       }
       case "getLocalBranches": {
         const branches = await repo.getBranches({ remote: false });
-        const current = repo.state.HEAD?.name;
-        const local: WebviewBranch[] = branches.map((b) => ({
-          name: b.name ?? "",
-          isCurrent: b.name === current,
-        }));
+        const headName = repo.state.HEAD?.name;
+        const currentShort = (headName ?? "")
+          .replace(/^refs\/heads\//, "")
+          .trim() || null;
+        const local: WebviewBranch[] = branches.map((b) => {
+          const shortName = (b.name ?? "").replace(/^refs\/heads\//, "").trim();
+          const displayName = shortName || (b.name ?? "");
+          const isCurrent =
+            currentShort != null &&
+            (shortName === currentShort || (b.name ?? "") === headName);
+          const isMain =
+            displayName === "master" || displayName === "main";
+          return {
+            name: displayName,
+            isCurrent,
+            isMain,
+          };
+        });
         // Текущая ветка всегда первая в списке Local
         local.sort((a, b) => {
           if (a.isCurrent) {
@@ -515,7 +546,6 @@ async function handleApiRequest(
           repo.getBranches({ remote: false }),
           repo.getBranches({ remote: true }),
         ]);
-        const current = repo.state.HEAD?.name ?? null;
         const byRemote = new Map<string, WebviewBranch[]>();
         const seenPerRemote = new Map<string, Set<string>>();
         for (const b of remoteBranches) {
@@ -546,10 +576,24 @@ async function handleApiRequest(
         );
         const tagRefs = await getTagRefs(repo);
         const tags = mapTagRefsToWebview(tagRefs);
-        const local: WebviewBranch[] = localBranches.map((b) => ({
-          name: b.name ?? "",
-          isCurrent: b.name === current,
-        }));
+        const headName = repo.state.HEAD?.name ?? null;
+        const currentShort = (headName ?? "")
+          .replace(/^refs\/heads\//, "")
+          .trim() || null;
+        const local: WebviewBranch[] = localBranches.map((b) => {
+          const shortName = (b.name ?? "").replace(/^refs\/heads\//, "").trim();
+          const displayName = shortName || (b.name ?? "");
+          const isCurrent =
+            currentShort != null &&
+            (shortName === currentShort || (b.name ?? "") === headName);
+          const isMain =
+            displayName === "master" || displayName === "main";
+          return {
+            name: displayName,
+            isCurrent,
+            isMain,
+          };
+        });
         // Текущая ветка всегда первая в списке Local
         local.sort((a, b) => {
           if (a.isCurrent) {
@@ -562,7 +606,7 @@ async function handleApiRequest(
         });
         return {
           data: {
-            currentBranch: current,
+            currentBranch: headName,
             local,
             remote: remoteList,
             tags,
@@ -570,7 +614,7 @@ async function handleApiRequest(
         };
       }
       case "getCommits": {
-        const maxEntries = (params?.maxEntries as number) ?? 50;
+        const maxEntries = (params?.maxEntries as number) ?? 100;
         const ref = (params?.ref as string) ?? "HEAD";
         const commits = await repo.log({ maxEntries, ref });
         const headName = repo.state.HEAD?.name;

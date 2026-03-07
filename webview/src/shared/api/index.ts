@@ -1,4 +1,8 @@
-export { VscodeGitApi, vscodeGitApi } from './vscodeApi';
+export {
+  VscodeGitApi,
+  vscodeGitApi,
+  postMessageToHost,
+} from './vscodeApi';
 export type {
   ApiRequest,
   ApiResponse,

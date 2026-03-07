@@ -1,7 +1,7 @@
 import { createSignal, onMount, useContext } from "solid-js";
-import { vscodeGitApi, VscodeGitApi } from "../../shared/api";
+import { vscodeGitApi, VscodeGitApi, postMessageToHost } from "../../shared/api";
 import { SelectedBranchContext } from "../../shared/context/SelectedBranchContext";
-import { MOCK_CHANGED_FILES, MOCK_COMMITS } from "../../shared/lib/mock-data";
+import { MOCK_CHANGED_FILES } from "../../shared/lib/mock-data";
 import type { Branch, Commit, Tag } from "../../shared/lib/types";
 import { BranchesPane } from "../../widgets/branches-pane";
 import { CommitDetailsPanel } from "../../widgets/commit-details-panel";
@@ -27,17 +27,18 @@ export function GitViewPage() {
   const selectedTag = refContext.selectedTag;
   const setSelectedTag = refContext.setSelectedTag;
 
-  const root = document.getElementById("root")!;
-  const initialLeft = parseInt(root?.dataset?.sidebarWidth ?? "280", 10) || 280;
+  const root = typeof document !== "undefined" ? document.getElementById("root") : null;
+  let initialLeft = Number(root?.dataset?.sidebarWidth) || 280;
+  if (Number.isNaN(initialLeft) || initialLeft <= 0) initialLeft = 280;
   const [leftWidth, setLeftWidth] = createSignal(
     clamp(initialLeft, MIN_SIDEBAR, MAX_LEFT),
   );
   const [rightWidth, setRightWidth] = createSignal(
     clamp(320, MIN_SIDEBAR, MAX_RIGHT),
   );
-  const [selectedCommit, setSelectedCommit] = createSignal<Commit | null>(
-    MOCK_COMMITS[0] ?? null,
-  );
+  const [commits, setCommits] = createSignal<Commit[]>([]);
+  const [commitsLoading, setCommitsLoading] = createSignal(false);
+  const [selectedCommit, setSelectedCommit] = createSignal<Commit | null>(null);
 
   const [currentBranch, setCurrentBranch] = createSignal<string>("");
   const [localBranches, setLocalBranches] =
@@ -50,16 +51,32 @@ export function GitViewPage() {
 
   const selectedHash = () => selectedCommit()?.hash ?? null;
 
+  const loadCommits = () => {
+    if (!VscodeGitApi.isAvailable()) return;
+    setCommitsLoading(true);
+    vscodeGitApi
+      .getCommits({ maxEntries: 100 })
+      .then((list) => {
+        const arr = Array.isArray(list) ? list : [];
+        setCommits(arr);
+        setSelectedCommit(arr[0] ?? null);
+      })
+      .catch(() => {
+        setCommits([]);
+      })
+      .finally(() => setCommitsLoading(false));
+  };
+
   const loadBranches = () => {
     setBranchesLoading(true);
     setBranchesError(null);
     vscodeGitApi
       .getBranches()
       .then((p) => {
-        setCurrentBranch(p.currentBranch ?? "");
-        setLocalBranches(p.local ?? EMPTY_BRANCHES);
-        setRemoteBranches(p.remote ?? EMPTY_BRANCHES);
-        setTags(p.tags ?? EMPTY_TAGS);
+        setCurrentBranch(p?.currentBranch ?? "");
+        setLocalBranches(Array.isArray(p?.local) ? p.local : EMPTY_BRANCHES);
+        setRemoteBranches(Array.isArray(p?.remote) ? p.remote : EMPTY_BRANCHES);
+        setTags(Array.isArray(p?.tags) ? p.tags : EMPTY_TAGS);
       })
       .catch(() => {
         setBranchesError(NO_REPO_MESSAGE);
@@ -78,6 +95,7 @@ export function GitViewPage() {
       return;
     }
     loadBranches();
+    loadCommits();
   });
 
   onMount(() => {
@@ -110,21 +128,8 @@ export function GitViewPage() {
       dragging = null;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      if (
-        leftEl &&
-        typeof (
-          window as unknown as {
-            acquireVsCodeApi?: () => { postMessage: (m: unknown) => void };
-          }
-        ).acquireVsCodeApi !== "undefined"
-      ) {
-        (
-          window as unknown as {
-            acquireVsCodeApi: () => { postMessage: (m: unknown) => void };
-          }
-        )
-          .acquireVsCodeApi()
-          .postMessage({ type: "sidebarWidth", width: leftEl.offsetWidth });
+      if (leftEl) {
+        postMessageToHost({ type: "sidebarWidth", width: leftEl.offsetWidth });
       }
     };
 
@@ -156,58 +161,87 @@ export function GitViewPage() {
   });
 
   const handleInitRepo = () => {
-    vscodeGitApi.initRepo().then(() => loadBranches());
+    vscodeGitApi
+      .initRepo()
+      .then(() => {
+        setBranchesError(null);
+        loadBranches();
+        loadCommits();
+      });
   };
 
+  const showEmptyState = () => branchesError() != null;
+
   return (
-    <div class="git-view-page">
-      <aside
-        id="left-pane"
-        class="git-view-page__left"
-        style={{ width: `${leftWidth()}px` }}
-      >
-        <BranchesPane
-          currentBranch={currentBranch() || "—"}
-          localBranches={localBranches()}
-          remoteBranches={remoteBranches()}
-          tags={tags()}
-          selectedBranch={selectedBranch()}
-          selectedTag={selectedTag()}
-          onSelectBranch={setSelectedBranch}
-          onSelectTag={setSelectedTag}
-          loading={branchesLoading()}
-          error={branchesError()}
-          onInitRepo={VscodeGitApi.isAvailable() ? handleInitRepo : undefined}
-        />
-      </aside>
-      <div
-        id="resizer-left"
-        class="git-view-page__resizer git-view-page__resizer--left"
-        title="Изменить ширину левой панели"
-      />
-      <main class="git-view-page__center">
-        <CommitHistory
-          commits={MOCK_COMMITS}
-          selectedCommitHash={selectedHash()}
-          onSelectCommit={setSelectedCommit}
-        />
-      </main>
-      <div
-        id="resizer-right"
-        class="git-view-page__resizer git-view-page__resizer--right"
-        title="Изменить ширину правой панели"
-      />
-      <aside
-        id="right-pane"
-        class="git-view-page__right"
-        style={{ width: `${rightWidth()}px` }}
-      >
-        <CommitDetailsPanel
-          commit={selectedCommit()}
-          changedFiles={MOCK_CHANGED_FILES}
-          repoName="clubm8-web"
-        />
-      </aside>
+    <div
+      class="git-view-page"
+      classList={{ "git-view-page--empty": showEmptyState() }}
+    >
+      {showEmptyState() ? (
+        <div class="git-view-page__empty-state">
+          <p class="git-view-page__empty-text">{branchesError()}</p>
+          {VscodeGitApi.isAvailable() && (
+            <button
+              type="button"
+              class="git-view-page__empty-btn"
+              onClick={handleInitRepo}
+            >
+              Создать репозиторий
+            </button>
+          )}
+        </div>
+      ) : (
+        <>
+          <aside
+            id="left-pane"
+            class="git-view-page__left"
+            style={{ width: `${leftWidth()}px` }}
+          >
+            <BranchesPane
+              currentBranch={currentBranch() || "—"}
+              localBranches={localBranches()}
+              remoteBranches={remoteBranches()}
+              tags={tags()}
+              selectedBranch={selectedBranch()}
+              selectedTag={selectedTag()}
+              onSelectBranch={setSelectedBranch}
+              onSelectTag={setSelectedTag}
+              loading={branchesLoading()}
+              error={null}
+              onInitRepo={undefined}
+            />
+          </aside>
+          <div
+            id="resizer-left"
+            class="git-view-page__resizer git-view-page__resizer--left"
+            title="Изменить ширину левой панели"
+          />
+          <main class="git-view-page__center">
+            <CommitHistory
+              commits={commits() ?? []}
+              selectedCommitHash={selectedHash()}
+              onSelectCommit={setSelectedCommit}
+              loading={commitsLoading()}
+            />
+          </main>
+          <div
+            id="resizer-right"
+            class="git-view-page__resizer git-view-page__resizer--right"
+            title="Изменить ширину правой панели"
+          />
+          <aside
+            id="right-pane"
+            class="git-view-page__right"
+            style={{ width: `${rightWidth()}px` }}
+          >
+            <CommitDetailsPanel
+              commit={selectedCommit()}
+              changedFiles={MOCK_CHANGED_FILES}
+              repoName="clubm8-web"
+            />
+          </aside>
+        </>
+      )}
     </div>
   );
 }

@@ -17,11 +17,22 @@ declare global {
   }
 }
 
+let vsCodeApiInstance: ReturnType<NonNullable<Window["acquireVsCodeApi"]>> | null = null;
+
+/** Получить API VS Code. Вызывать acquireVsCodeApi() можно только один раз за время жизни webview. */
 function getVsCodeApi() {
   if (typeof window.acquireVsCodeApi === "undefined") {
     return null;
   }
-  return window.acquireVsCodeApi();
+  if (vsCodeApiInstance !== null) {
+    return vsCodeApiInstance;
+  }
+  try {
+    vsCodeApiInstance = window.acquireVsCodeApi();
+    return vsCodeApiInstance;
+  } catch {
+    return null;
+  }
 }
 
 let nextRequestId = 0;
@@ -117,14 +128,10 @@ export class VscodeGitApi {
   }
 
   /**
-   * История коммитов.
-   * @param maxEntries — максимум записей (по умолчанию 50)
-   * @param ref — ветка/ref (по умолчанию HEAD)
+   * История коммитов текущей ветки (HEAD).
+   * @param maxEntries — максимум записей (по умолчанию 100)
    */
-  getCommits(params?: {
-    maxEntries?: number;
-    ref?: string;
-  }): Promise<Commit[]> {
+  getCommits(params?: { maxEntries?: number }): Promise<Commit[]> {
     return request<Commit[]>("getCommits", params);
   }
 
@@ -170,3 +177,9 @@ export class VscodeGitApi {
 
 /** Единственный экземпляр API для webview */
 export const vscodeGitApi = new VscodeGitApi();
+
+/** Отправить сообщение в extension (использует кэшированный API, не вызывает acquireVsCodeApi повторно). */
+export function postMessageToHost(message: unknown): void {
+  const api = getVsCodeApi();
+  api?.postMessage(message);
+}

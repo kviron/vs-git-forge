@@ -3,6 +3,8 @@ export interface Branch {
   name: string;
   remote?: string;
   isCurrent?: boolean;
+  /** Главная ветка репозитория (master/main) — отображается со звёздочкой */
+  isMain?: boolean;
   isFavorite?: boolean;
   isSelected?: boolean;
   children?: Branch[];

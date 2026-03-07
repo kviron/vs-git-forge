@@ -6,21 +6,26 @@ interface CommitHistoryProps {
   commits: Commit[];
   selectedCommitHash: string | null;
   onSelectCommit?: (commit: Commit) => void;
+  loading?: boolean;
 }
 
 export function CommitHistory(props: CommitHistoryProps) {
   return (
     <div class="commit-history">
       <CommitSearchFilters />
-      <div class="commit-history__list" role="list">
-        {props.commits.map((commit) => (
-          <CommitListItem
-            commit={commit}
-            selected={props.selectedCommitHash === commit.hash}
-            onSelect={() => props.onSelectCommit?.(commit)}
-          />
-        ))}
-      </div>
+      {props.loading ? (
+        <div class="commit-history__loading">Загрузка коммитов…</div>
+      ) : (
+        <div class="commit-history__list" role="list">
+          {(props.commits ?? []).map((commit) => (
+            <CommitListItem
+              commit={commit}
+              selected={props.selectedCommitHash === commit.hash}
+              onSelect={() => props.onSelectCommit?.(commit)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
