@@ -12,8 +12,13 @@ const LOG_PREFIX = "[git-forge]";
 let channel: vscode.LogOutputChannel | undefined;
 
 /** Дублирует сообщение в Debug Console при отладке расширения (F5). */
-function toConsole(level: "log" | "warn" | "error", message: string, ...args: unknown[]): void {
-  const fn = level === "log" ? console.log : level === "warn" ? console.warn : console.error;
+function toConsole(
+  level: "log" | "warn" | "error",
+  message: string,
+  ...args: unknown[]
+): void {
+  const fn =
+    level === "log" ? console.log : level === "warn" ? console.warn : console.error;
   if (args.length > 0) {
     fn(LOG_PREFIX, message, ...args);
   } else {
@@ -25,7 +30,9 @@ function toConsole(level: "log" | "warn" | "error", message: string, ...args: un
  * Инициализирует логгер. Вызывать в activate() расширения.
  * Создаёт канал вывода "Git Forge" в панели Output.
  */
-export function initLogger(context: vscode.ExtensionContext): vscode.LogOutputChannel {
+export function initLogger(
+  context: vscode.ExtensionContext,
+): vscode.LogOutputChannel {
   if (channel) {
     return channel;
   }

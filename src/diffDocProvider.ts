@@ -5,7 +5,7 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
-import { log } from "./logger";
+import { log } from "./core/logger";
 
 /** Сторона в сравнении: старая (до) или новая (после). */
 export const enum DiffSide {
@@ -138,8 +138,36 @@ export function encodeDiffDocUri(
   });
 }
 
+const DEFAULT_DIFF_DOC_URI_DATA: DiffDocUriData = {
+  filePath: "",
+  commit: "",
+  repo: "",
+  exists: false,
+};
+
+/** Декодирует URI; при ошибке парса или неверной структуре возвращает объект с exists: false. */
 export function decodeDiffDocUri(uri: vscode.Uri): DiffDocUriData {
-  return JSON.parse(
-    Buffer.from(uri.query, "base64").toString("utf8"),
-  ) as DiffDocUriData;
+  try {
+    const raw = Buffer.from(uri.query, "base64").toString("utf8");
+    const data = JSON.parse(raw) as unknown;
+    if (data === null || typeof data !== "object") {
+      return DEFAULT_DIFF_DOC_URI_DATA;
+    }
+    const o = data as Record<string, unknown>;
+    const repo = typeof o.repo === "string" ? o.repo : "";
+    const commit = typeof o.commit === "string" ? o.commit : "";
+    const filePath = typeof o.filePath === "string" ? o.filePath : "";
+    const exists = o.exists === true;
+    const partnerCommit =
+      typeof o.partnerCommit === "string" ? o.partnerCommit : undefined;
+    return {
+      repo,
+      commit,
+      filePath,
+      exists,
+      ...(partnerCommit ? { partnerCommit } : {}),
+    };
+  } catch {
+    return DEFAULT_DIFF_DOC_URI_DATA;
+  }
 }
