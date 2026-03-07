@@ -99,7 +99,7 @@ body {
   background: var(--vscode-button-hoverBackground, #1177bb);
 }
 
-/* ========== Git View Page (three columns) ========== */
+/* ========== Git View Page (sidebar + center; Changed Files — нативная вкладка) ========== */
 .git-view-page {
   display: flex;
   width: 100%;

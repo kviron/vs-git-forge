@@ -8,17 +8,18 @@ import {
   VsEye,
   VsSearch,
 } from 'solid-icons/vs';
+import { t } from '../../shared/i18n';
 import type { Branch } from '../../shared/lib/types';
 import { getBranchId } from '../../shared/lib/branch';
 
 const ICON_SIZE = 18;
 
 const ACTION_ICONS = [
-  { icon: VsArrowSwap, title: 'Сортировка и опции' },
-  { icon: VsRefresh, title: 'Refresh' },
-  { icon: VsGitMerge, title: 'Cherry-pick' },
-  { icon: VsEye, title: 'Видимость' },
-  { icon: VsSearch, title: 'Поиск' },
+  { icon: VsArrowSwap, titleKey: 'toolbar.sortOptions' as const },
+  { icon: VsRefresh, titleKey: 'toolbar.refresh' as const },
+  { icon: VsGitMerge, titleKey: 'toolbar.cherryPick' as const },
+  { icon: VsEye, titleKey: 'toolbar.visibility' as const },
+  { icon: VsSearch, titleKey: 'toolbar.search' as const },
 ];
 
 export interface CommitSearchFiltersProps {
@@ -134,19 +135,19 @@ export function CommitSearchFilters(props: CommitSearchFiltersProps) {
             class="commit-search-filters__dropdown"
             aria-haspopup="listbox"
             aria-expanded={branchDropdownOpen()}
-            aria-label="Фильтр по ветке"
-            title={props.branchLabel ?? 'Ветка'}
+            aria-label={t("branch.filterDropdown")}
+            title={props.branchLabel ?? t("branch.label")}
             onClick={handleBranchButtonClick}
             disabled={!props.onBranchFilterChange}
           >
-            {props.branchLabel ?? 'Branch: …'} ▼
+            {props.branchLabel ?? t("branch.ellipsis")} ▼
           </button>
           {props.branchFilterRef != null && props.onBranchFilterChange && (
             <button
               type="button"
               class="commit-search-filters__clear-btn"
-              title="Сбросить фильтр по ветке"
-              aria-label="Сбросить фильтр по ветке"
+              title={t("branch.clearFilter")}
+              aria-label={t("branch.clearFilter")}
               onClick={() => selectBranchFilter(null)}
             >
               ×
@@ -157,7 +158,7 @@ export function CommitSearchFilters(props: CommitSearchFiltersProps) {
               id="commit-search-filters-branch-dropdown"
               class="commit-search-filters__branch-list"
               role="radiogroup"
-              aria-label="Ветка (только одна)"
+              aria-label={t("branch.ariaOne")}
             >
               <li class="commit-search-filters__branch-item commit-search-filters__branch-item--current">
                 <button
@@ -167,7 +168,7 @@ export function CommitSearchFilters(props: CommitSearchFiltersProps) {
                   class="commit-search-filters__branch-item-btn"
                   onClick={() => selectBranchFilter(null)}
                 >
-                  Текущая ветка (HEAD)
+                  {t("branch.currentHead")}
                   {props.branchFilterRef == null ? ' ✓' : ''}
                 </button>
               </li>
@@ -270,12 +271,12 @@ export function CommitSearchFilters(props: CommitSearchFiltersProps) {
         </button>
       </div>
       <div class="commit-search-filters__actions">
-        {ACTION_ICONS.map(({ icon: Icon, title }) => (
+        {ACTION_ICONS.map(({ icon: Icon, titleKey }) => (
           <button
             type="button"
             class="icon-btn commit-search-filters__action-btn"
-            title={title}
-            aria-label={title}
+            title={t(titleKey)}
+            aria-label={t(titleKey)}
           >
             <Icon size={ICON_SIZE} />
           </button>

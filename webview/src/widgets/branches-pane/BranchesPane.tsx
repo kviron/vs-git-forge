@@ -1,5 +1,6 @@
 import { createSignal } from 'solid-js';
 import type { Branch, Tag } from '../../shared/lib/types';
+import { t } from '../../shared/i18n';
 import { BranchesPaneToolbar } from '../../features/branches-pane-toolbar';
 import { BranchList } from '../../features/branch-list';
 import { TagList } from '../../features/tag-list';
@@ -85,7 +86,7 @@ export function BranchesPane(props: BranchesPaneProps) {
                 class="branches-pane__error-btn"
                 onClick={props.onInitRepo}
               >
-                Создать репозиторий
+                {t("repo.createRepo")}
               </button>
             )}
           </div>
@@ -93,7 +94,7 @@ export function BranchesPane(props: BranchesPaneProps) {
         {!props.loading && (
           <>
             <BranchList
-              title="Local"
+              title={t("branches.local")}
               branches={filteredLocal()}
               currentBranch={getCurrentBranchObject(props.localBranches)}
               onSelectBranch={props.onSelectBranch}
@@ -102,7 +103,7 @@ export function BranchesPane(props: BranchesPaneProps) {
             />
             {props.remoteBranches.length > 0 && (
               <BranchList
-                title="Remote"
+                title={t("branches.remote")}
                 branches={filteredRemote()}
                 currentBranch={getCurrentBranchObject(props.localBranches)}
                 onSelectBranch={props.onSelectBranch}

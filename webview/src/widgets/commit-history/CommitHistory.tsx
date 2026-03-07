@@ -1,5 +1,6 @@
 import { CommitListItem } from "../../entities/commit";
 import { CommitSearchFilters } from "../../features/commit-search-filters";
+import { t } from "../../shared/i18n";
 import type { Branch, Commit } from "../../shared/lib/types";
 import { getBranchId } from "../../shared/lib/branch";
 import { CommitGraph, ROW_HEIGHT } from "../commit-graph";
@@ -34,11 +35,13 @@ interface CommitHistoryProps {
 export function CommitHistory(props: CommitHistoryProps) {
   const branchLabel = () => {
     if (props.branchFilterRef == null) {
-      return props.currentBranchName ? `Ветка: ${props.currentBranchName}` : "Ветка: HEAD";
+      return props.currentBranchName
+        ? t("branch.filter", props.currentBranchName)
+        : t("branch.head");
     }
     const list = props.branches ?? [];
     const branch = list.find((b) => b.refName === props.branchFilterRef);
-    return branch ? `Ветка: ${getBranchId(branch)}` : "Ветка: …";
+    return branch ? t("branch.filter", getBranchId(branch)) : t("branch.ellipsis");
   };
 
   return (
@@ -52,7 +55,7 @@ export function CommitHistory(props: CommitHistoryProps) {
         authors={props.authors ?? []}
         userFilter={props.userFilter ?? null}
         onUserFilterChange={props.onUserFilterChange}
-        userLabel={props.userLabel ?? "User: Все авторы"}
+        userLabel={props.userLabel ?? t("user.allAuthors")}
         searchQuery={props.searchQuery ?? ""}
         onSearchChange={props.onSearchChange}
       />

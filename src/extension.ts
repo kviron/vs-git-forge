@@ -28,7 +28,7 @@ class GitForgeTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   getChildren(): vscode.TreeItem[] {
     return [
       new vscode.TreeItem(
-        "Добро пожаловать в Git Forge",
+        vscode.l10n.t("tree.welcome"),
         vscode.TreeItemCollapsibleState.None,
       ),
     ];
@@ -46,7 +46,7 @@ function updateBranchStatusBar(
 ): void {
   if (branch) {
     item.text = `$(git-branch) ${branch}`;
-    item.tooltip = `Ветка: ${branch}. Нажми, чтобы открыть Git Forge`;
+    item.tooltip = vscode.l10n.t("statusBar.branchTooltip", branch);
     item.command = "vs-git-forge.openGitForge";
     item.show();
   } else {
@@ -74,6 +74,22 @@ async function getBranchFromGitHead(): Promise<string | undefined> {
     }
   }
   return undefined;
+}
+
+/** Список имён remotes из конфига (git remote). Пустой, если remotes нет или команда не сработала. */
+function getConfiguredRemotes(repoRoot: string): string[] {
+  try {
+    const out = execSync("git remote", {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    return out
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 let branchStatusBarSubscribed = false;
@@ -200,12 +216,12 @@ async function handleInitRepo(
     ? vscode.Uri.file(rootUri)
     : vscode.workspace.workspaceFolders?.[0]?.uri;
   if (!folder) {
-    return { error: "Нет открытой папки для инициализации репозитория." };
+    return { error: vscode.l10n.t("initRepo.noFolder") };
   }
   const api = await getGitApi();
   if (!api) {
     return {
-      error: "Расширение Git недоступно. Установите встроенное расширение Git.",
+      error: vscode.l10n.t("initRepo.gitNotAvailable"),
     };
   }
   try {
@@ -243,11 +259,18 @@ function gitStatusToKind(status: number): "added" | "modified" | "deleted" {
   return "modified";
 }
 
+/** Локаль из VS Code (ru, en и т.д.) для форматирования дат. */
+function getDateLocale(): string {
+  const lang = vscode.env.language;
+  return lang.startsWith("ru") ? "ru-RU" : "en-US";
+}
+
 function formatDate(d: Date | undefined): string {
   if (!d) {
     return "";
   }
-  return d.toLocaleString("ru-RU", {
+  const locale = getDateLocale();
+  return d.toLocaleString(locale, {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -260,23 +283,25 @@ function formatDateRelative(d: Date | undefined): string {
   if (!d) {
     return "";
   }
+  const locale = getDateLocale();
   const now = new Date();
   const diff = now.getTime() - d.getTime();
   const days = Math.floor(diff / (24 * 60 * 60 * 1000));
   if (days === 0) {
-    return d.toLocaleTimeString("ru-RU", {
+    return d.toLocaleTimeString(locale, {
       hour: "2-digit",
       minute: "2-digit",
     });
   }
   if (days === 1) {
     return (
-      "Вчера " +
-      d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+      vscode.l10n.t("date.yesterday") +
+      " " +
+      d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })
     );
   }
   if (days < 7) {
-    return `${days} дн. назад`;
+    return vscode.l10n.t("date.daysAgo", String(days));
   }
   return formatDate(d);
 }
@@ -316,6 +341,246 @@ interface WebviewChangedFile {
   path: string;
   name: string;
   status?: "added" | "modified" | "deleted";
+  /** Для переименований (R): путь до переименования, для левой стороны diff. */
+  oldPath?: string;
+}
+
+/** Узел дерева: папка или файл */
+type ChangedFileTreeNode =
+  | { kind: "folder"; path: string; segment: string }
+  | { kind: "file"; path: string; name: string; status: "added" | "modified" | "deleted"; oldPath?: string };
+
+/** Цвета статуса из темы Git: зелёный — создан, синий — изменён, красный — удалён */
+const GIT_STATUS_THEME_IDS = {
+  added: "gitDecoration.addedResourceForeground",
+  modified: "gitDecoration.modifiedResourceForeground",
+  deleted: "gitDecoration.deletedResourceForeground",
+} as const;
+
+/** Провайдер декораций для дерева Changed Files: подсветка по статусу из коммита */
+class ChangedFilesDecorationProvider implements vscode.FileDecorationProvider {
+  private _onDidChangeFileDecorations = new vscode.EventEmitter<vscode.Uri | vscode.Uri[]>();
+  readonly onDidChangeFileDecorations = this._onDidChangeFileDecorations.event;
+
+  private uriToStatus = new Map<string, "added" | "modified" | "deleted">();
+
+  setUriStatuses(
+    repoRoot: string,
+    files: WebviewChangedFile[],
+    virtualPrefix: string,
+  ): void {
+    this.uriToStatus.clear();
+    const norm = (p: string) => p.replace(/\\/g, "/");
+    for (const f of files) {
+      const virtualPath = path.normalize(
+        path.join(repoRoot, virtualPrefix, norm(f.path)),
+      );
+      this.uriToStatus.set(virtualPath, f.status ?? "modified");
+    }
+    const uris = Array.from(this.uriToStatus.keys(), (p) => vscode.Uri.file(p));
+    this._onDidChangeFileDecorations.fire(uris);
+  }
+
+  provideFileDecoration(uri: vscode.Uri): vscode.ProviderResult<vscode.FileDecoration> {
+    const key = path.normalize(uri.fsPath);
+    const status = this.uriToStatus.get(key);
+    if (!status) return undefined;
+    const themeId = GIT_STATUS_THEME_IDS[status];
+    return { color: new vscode.ThemeColor(themeId) };
+  }
+}
+
+/** Провайдер нативного дерева «Changed Files» в стиле проводника VS Code */
+class ChangedFilesTreeProvider
+  implements vscode.TreeDataProvider<ChangedFileTreeNode>
+{
+  private _onDidChangeTreeData = new vscode.EventEmitter<
+    ChangedFileTreeNode | undefined | void
+  >();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  private files: WebviewChangedFile[] = [];
+  private commitHash: string | null = null;
+  /** Корень репозитория для resourceUri; виртуальный путь не даёт SCM вешать подсветку Git */
+  private repoRoot: string | null = null;
+
+  /** Префикс виртуальной папки: иконки темы берутся по расширению имени, путь не совпадает с реальными файлами — Git не декорирует */
+  private static readonly VIRTUAL_PREFIX = ".gitforge-tree";
+
+  constructor(private readonly decorationProvider: ChangedFilesDecorationProvider) {}
+
+  private normalize(p: string): string {
+    return p.replace(/\\/g, "/");
+  }
+
+  /** Количество файлов в папке (включая вложенные) */
+  private getFileCountInFolder(folderPath: string): number {
+    const prefix = folderPath.endsWith("/") ? folderPath : `${folderPath}/`;
+    return this.files.filter((f) => f.path.startsWith(prefix)).length;
+  }
+
+  setData(
+    commitHash: string | null,
+    files: WebviewChangedFile[],
+    repoRoot?: string,
+    _commitInfo?: unknown,
+  ): void {
+    this.commitHash = commitHash;
+    this.repoRoot = repoRoot ?? null;
+    this.files = files.map((f) => ({
+      ...f,
+      path: this.normalize(f.path),
+    }));
+    if (this.repoRoot != null) {
+      this.decorationProvider.setUriStatuses(
+        this.repoRoot,
+        this.files,
+        ChangedFilesTreeProvider.VIRTUAL_PREFIX,
+      );
+    } else {
+      this.decorationProvider.setUriStatuses("", [], ChangedFilesTreeProvider.VIRTUAL_PREFIX);
+    }
+    this._onDidChangeTreeData.fire();
+  }
+
+  getChildren(
+    element?: ChangedFileTreeNode,
+  ): ChangedFileTreeNode[] {
+
+    const prefix = element
+      ? element.kind === "folder"
+        ? `${element.path}/`
+        : undefined
+      : "";
+    if (prefix === undefined) return [];
+
+    if (!prefix) {
+      const items: ChangedFileTreeNode[] = [];
+      const seen = new Set<string>();
+      for (const f of this.files) {
+        const rest = f.path;
+        const nextSlash = rest.indexOf("/");
+        if (nextSlash === -1) {
+          items.push({
+            kind: "file",
+            path: f.path,
+            name: f.name,
+            status: f.status ?? "modified",
+            oldPath: f.oldPath,
+          });
+        } else {
+          const segment = rest.slice(0, nextSlash);
+          if (seen.has(segment)) continue;
+          seen.add(segment);
+          items.push({
+            kind: "folder",
+            path: segment,
+            segment,
+          });
+        }
+      }
+      items.sort((a, b) => {
+        const aLabel = a.kind === "folder" ? a.segment : a.name;
+        const bLabel = b.kind === "folder" ? b.segment : b.name;
+        const aIsFolder = a.kind === "folder";
+        const bIsFolder = b.kind === "folder";
+        if (aIsFolder !== bIsFolder) return (bIsFolder ? 1 : 0) - (aIsFolder ? 1 : 0);
+        return aLabel.localeCompare(bLabel, undefined, { sensitivity: "base" });
+      });
+      return items;
+    }
+
+    const items: ChangedFileTreeNode[] = [];
+    const seen = new Set<string>();
+    for (const f of this.files) {
+      if (!f.path.startsWith(prefix)) continue;
+      const rest = f.path.slice(prefix.length);
+      const nextSlash = rest.indexOf("/");
+      if (nextSlash === -1) {
+        items.push({
+          kind: "file",
+          path: f.path,
+          name: f.name,
+          status: f.status ?? "modified",
+          oldPath: f.oldPath,
+        });
+      } else {
+        const segment = rest.slice(0, nextSlash);
+        if (seen.has(segment)) continue;
+        seen.add(segment);
+        items.push({
+          kind: "folder",
+          path: prefix + segment,
+          segment,
+        });
+      }
+    }
+    items.sort((a, b) => {
+      const aLabel = a.kind === "folder" ? a.segment : a.kind === "file" ? a.name : "";
+      const bLabel = b.kind === "folder" ? b.segment : b.kind === "file" ? b.name : "";
+      const aIsFolder = a.kind === "folder";
+      const bIsFolder = b.kind === "folder";
+      if (aIsFolder !== bIsFolder) return (bIsFolder ? 1 : 0) - (aIsFolder ? 1 : 0);
+      return aLabel.localeCompare(bLabel, undefined, { sensitivity: "base" });
+    });
+    return items;
+  }
+
+  getTreeItem(element: ChangedFileTreeNode): vscode.TreeItem {
+    const virtualPath =
+      this.repoRoot != null
+        ? path.join(
+            this.repoRoot,
+            ChangedFilesTreeProvider.VIRTUAL_PREFIX,
+            element.path,
+          )
+        : null;
+
+    if (element.kind === "folder") {
+      const item = new vscode.TreeItem(
+        element.segment,
+        vscode.TreeItemCollapsibleState.Expanded,
+      );
+      item.contextValue = "folder";
+      const count = this.getFileCountInFolder(element.path);
+      item.description =
+        count === 1
+          ? vscode.l10n.t("changedFiles.oneFile")
+          : vscode.l10n.t("changedFiles.filesCount", String(count));
+      if (virtualPath != null) {
+        item.resourceUri = vscode.Uri.file(virtualPath);
+      } else {
+        item.iconPath = new vscode.ThemeIcon("folder");
+      }
+      return item;
+    }
+    const item = new vscode.TreeItem(element.name);
+    item.description = element.status;
+    if (virtualPath != null) {
+      item.resourceUri = vscode.Uri.file(virtualPath);
+    } else {
+      const iconId =
+        element.status === "added"
+          ? "git-add"
+          : element.status === "deleted"
+            ? "git-delete"
+            : "git-modified";
+      item.iconPath = new vscode.ThemeIcon(iconId);
+    }
+    item.contextValue = "file";
+    if (this.commitHash && element.kind === "file") {
+      item.command = {
+        command: "vs-git-forge.openChangedFileDiff",
+        title: vscode.l10n.t("command.openDiff.title"),
+        arguments: [this.commitHash, element.path, element.status, element.oldPath],
+      };
+    }
+    return item;
+  }
+
+  getCurrentCommitHash(): string | null {
+    return this.commitHash;
+  }
 }
 
 /** Показать диалог создания новой ветки и выполнить git branch. */
@@ -325,9 +590,9 @@ async function handleShowCreateBranchDialog(
 ): Promise<{ data?: string | null; error?: string }> {
   if (!repo) {
     void vscode.window.showErrorMessage(
-      "Git-репозиторий не найден. Откройте папку с репозиторием.",
+      vscode.l10n.t("createBranch.repoNotFound"),
     );
-    return { error: "Git-репозиторий не найден." };
+    return { error: vscode.l10n.t("createBranch.repoNotFoundShort") };
   }
   const sourceCommitHash =
     typeof params?.sourceCommitHash === "string"
@@ -344,8 +609,8 @@ async function handleShowCreateBranchDialog(
     ? sourceCommitHash.slice(0, 7)
     : sourceRef.replace(/^refs\/heads\//, "").trim() || sourceRef;
   const title = sourceCommitHash
-    ? `Создание новой ветки из коммита ${shortRef}`
-    : `Создание новой ветки из ветки ${shortRef}`;
+    ? vscode.l10n.t("createBranch.titleFromCommit", shortRef)
+    : vscode.l10n.t("createBranch.titleFromBranch", shortRef);
 
   // Небольшая задержка, чтобы диалог гарантированно показался при вызове из webview
   await new Promise((r) => setTimeout(r, 100));
@@ -353,15 +618,15 @@ async function handleShowCreateBranchDialog(
   // Шаг 1: ввод имени ветки
   const newName = await vscode.window.showInputBox({
     title,
-    prompt: "Имя новой ветки",
-    placeHolder: "например, feature/my-feature",
+    prompt: vscode.l10n.t("createBranch.prompt"),
+    placeHolder: vscode.l10n.t("createBranch.placeHolder"),
     validateInput(value) {
       const trimmed = value?.trim() ?? "";
       if (!trimmed) {
-        return "Введите имя ветки";
+        return vscode.l10n.t("createBranch.validateEmpty");
       }
       if (!/^[a-zA-Z0-9/_.-]+$/.test(trimmed)) {
-        return "Имя ветки может содержать только буквы, цифры, /, _, ., -";
+        return vscode.l10n.t("createBranch.validateInvalid");
       }
       return null;
     },
@@ -379,19 +644,19 @@ async function handleShowCreateBranchDialog(
   const checkoutChoice = await vscode.window.showQuickPick(
     [
       {
-        label: "Создать ветку",
-        description: "Ветка будет создана, текущая ветка не изменится",
+        label: vscode.l10n.t("createBranch.choiceCreate"),
+        description: vscode.l10n.t("createBranch.choiceCreateDesc"),
         checkout: false,
       },
       {
-        label: "$(git-branch) Создать и переключиться на новую ветку",
-        description: "После создания выполнить checkout",
+        label: `$(git-branch) ${vscode.l10n.t("createBranch.choiceCheckout")}`,
+        description: vscode.l10n.t("createBranch.choiceCheckoutDesc"),
         checkout: true,
       },
     ],
     {
-      title: `Ветка «${trimmedName}»`,
-      placeHolder: "Выберите действие после создания ветки",
+      title: vscode.l10n.t("createBranch.branchTitle", trimmedName),
+      placeHolder: vscode.l10n.t("createBranch.placeHolderChoice"),
       ignoreFocusOut: true,
     },
   );
@@ -418,8 +683,8 @@ async function handleShowCreateBranchDialog(
     }
     void vscode.window.showInformationMessage(
       checkout
-        ? `Ветка «${trimmedName}» создана и активна`
-        : `Ветка «${trimmedName}» создана из ${shortRef}`,
+        ? vscode.l10n.t("createBranch.branchCreatedActive", trimmedName)
+        : vscode.l10n.t("createBranch.branchCreatedFrom", trimmedName, shortRef),
     );
     return { data: trimmedName };
   } catch (e) {
@@ -435,12 +700,12 @@ async function handlePullBranch(
   repo: GitRepository | null,
 ): Promise<{ data?: unknown; error?: string }> {
   if (!repo) {
-    return { error: "Git-репозиторий не найден." };
+    return { error: vscode.l10n.t("pullBranch.repoNotFound") };
   }
   const branchName =
     typeof params?.branchName === "string" ? params.branchName.trim() : "";
   if (!branchName) {
-    return { error: "Укажите имя ветки." };
+    return { error: vscode.l10n.t("pullBranch.noBranch") };
   }
   const cwd = repo.rootUri.fsPath;
   try {
@@ -474,31 +739,31 @@ async function handleShowCreateTagDialog(
 ): Promise<{ data?: string | null; error?: string }> {
   if (!repo) {
     void vscode.window.showErrorMessage(
-      "Git-репозиторий не найден. Откройте папку с репозиторием.",
+      vscode.l10n.t("createTag.repoNotFound"),
     );
-    return { error: "Git-репозиторий не найден." };
+    return { error: vscode.l10n.t("createBranch.repoNotFoundShort") };
   }
   const commitHash =
     typeof params?.commitHash === "string" ? params.commitHash.trim() : "";
   if (!commitHash) {
-    return { error: "Не указан коммит для тега." };
+    return { error: vscode.l10n.t("createTag.noCommit") };
   }
   const shortHash = commitHash.slice(0, 7);
-  const title = `Создание тега на коммите ${shortHash}`;
+  const title = vscode.l10n.t("createTag.title", shortHash);
 
   await new Promise((r) => setTimeout(r, 100));
 
   const tagName = await vscode.window.showInputBox({
     title,
-    prompt: "Имя тега",
-    placeHolder: "например, v1.0.0",
+    prompt: vscode.l10n.t("createTag.prompt"),
+    placeHolder: vscode.l10n.t("createTag.placeHolder"),
     validateInput(value) {
       const trimmed = value?.trim() ?? "";
       if (!trimmed) {
-        return "Введите имя тега";
+        return vscode.l10n.t("createTag.validateEmpty");
       }
       if (!/^[a-zA-Z0-9/_.-]+$/.test(trimmed)) {
-        return "Имя тега может содержать только буквы, цифры, /, _, ., -";
+        return vscode.l10n.t("createTag.validateInvalid");
       }
       return null;
     },
@@ -515,7 +780,7 @@ async function handleShowCreateTagDialog(
       encoding: "utf8",
     });
     void vscode.window.showInformationMessage(
-      `Тег «${trimmedName}» создан на коммите ${shortHash}`,
+      vscode.l10n.t("createTag.created", trimmedName, shortHash),
     );
     return { data: trimmedName };
   } catch (e) {
@@ -556,8 +821,7 @@ async function handleApiRequest(
       return { data: [] };
     }
     return {
-      error:
-        "Git-репозиторий не найден. Откройте папку с репозиторием или установите расширение Git.",
+      error: vscode.l10n.t("api.repoNotFound"),
     };
   }
 
@@ -652,12 +916,13 @@ async function handleApiRequest(
             commit: b.commit,
           });
         }
-        const remoteList: WebviewBranch[] = Array.from(byRemote.entries()).map(
-          ([remote, children]) => ({
+        const configuredRemotes = getConfiguredRemotes(repo.rootUri.fsPath);
+        const remoteList: WebviewBranch[] = Array.from(byRemote.entries())
+          .filter(([remote]) => configuredRemotes.includes(remote))
+          .map(([remote, children]) => ({
             name: remote,
             children,
-          }),
-        );
+          }));
         return { data: remoteList };
       }
       case "getTags": {
@@ -696,12 +961,13 @@ async function handleApiRequest(
             commit: b.commit,
           });
         }
-        const remoteList: WebviewBranch[] = Array.from(byRemote.entries()).map(
-          ([remote, children]) => ({
+        const configuredRemotes = getConfiguredRemotes(repo.rootUri.fsPath);
+        const remoteList: WebviewBranch[] = Array.from(byRemote.entries())
+          .filter(([remote]) => configuredRemotes.includes(remote))
+          .map(([remote, children]) => ({
             name: remote,
             children,
-          }),
-        );
+          }));
         const tagRefs = await getTagRefs(repo);
         const tags = mapTagRefsToWebview(tagRefs);
         const headName = repo.state.HEAD?.name ?? null;
@@ -835,31 +1101,55 @@ async function handleApiRequest(
           return { data: { files: [] } };
         }
         try {
-          const out = execSync(
-            `git show --name-status --format= ${JSON.stringify(commitHash)}`,
-            {
-              cwd: repo.rootUri.fsPath,
+          const cwd = repo.rootUri.fsPath;
+          const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+          let parent: string;
+          try {
+            parent = execSync(`git rev-parse ${JSON.stringify(commitHash + "^")}`, {
+              cwd,
               encoding: "utf8",
-              maxBuffer: 2 * 1024 * 1024,
-            },
+            }).trim();
+          } catch {
+            parent = emptyTree;
+          }
+          const out = execSync(
+            `git diff --name-status --find-renames --diff-filter=AMDR -z ${JSON.stringify(parent)} ${JSON.stringify(commitHash)}`,
+            { cwd, encoding: "utf8", maxBuffer: 2 * 1024 * 1024 },
           );
+          const parts = out.split("\0").filter((s) => s.length > 0);
           const files: WebviewChangedFile[] = [];
-          for (const line of out.split(/\r?\n/)) {
-            const tab = line.indexOf("\t");
-            if (tab <= 0) continue;
-            const statusChar = line.slice(0, 1).toUpperCase();
-            const rest = line.slice(tab + 1).trim();
-            const pathStr = (rest.includes("\t") ? rest.split("\t").pop()?.trim() : rest) ?? "";
-            if (!pathStr) continue;
-            const pathNorm = pathStr.replace(/\\/g, "/");
-            const name = pathNorm.split("/").pop() ?? pathNorm;
-            const status: "added" | "modified" | "deleted" =
-              statusChar === "A"
-                ? "added"
-                : statusChar === "D"
-                  ? "deleted"
-                  : "modified";
-            files.push({ path: pathNorm, name, status });
+          for (let i = 0; i < parts.length; ) {
+            const statusToken = parts[i];
+            if (!statusToken) {
+              i += 1;
+              continue;
+            }
+            const statusChar = statusToken.slice(0, 1).toUpperCase();
+            const isRename = statusChar === "R";
+            if (isRename && i + 2 < parts.length) {
+              const path1 = parts[i + 1].replace(/\\/g, "/");
+              const path2 = parts[i + 2].replace(/\\/g, "/");
+              i += 3;
+              const pathNorm = path2;
+              const name = pathNorm.split("/").pop() ?? pathNorm;
+              const fileEntry: WebviewChangedFile = {
+                path: pathNorm,
+                name,
+                status: "modified",
+                oldPath: path1 !== path2 ? path1 : undefined,
+              };
+              files.push(fileEntry);
+            } else if (i + 1 < parts.length) {
+              const path1 = parts[i + 1].replace(/\\/g, "/");
+              i += 2;
+              const pathNorm = path1;
+              const name = pathNorm.split("/").pop() ?? pathNorm;
+              const status: "added" | "modified" | "deleted" =
+                statusChar === "A" ? "added" : statusChar === "D" ? "deleted" : "modified";
+              files.push({ path: pathNorm, name, status });
+            } else {
+              i += 1;
+            }
           }
           return { data: { files } };
         } catch (err) {
@@ -870,7 +1160,7 @@ async function handleApiRequest(
       case "getRepositoryRoot":
         return { data: { root: repo.rootUri.fsPath } };
       default:
-        return { error: `Неизвестный метод: ${method}` };
+        return { error: vscode.l10n.t("api.unknownMethod", method) };
     }
   } catch (e) {
     log.errorException(e, `handleApiRequest(${method})`);
@@ -880,7 +1170,8 @@ async function handleApiRequest(
 }
 
 const SIDEBAR_WIDTH_KEY = "vs-git-forge.sidebarWidth";
-const DEFAULT_SIDEBAR_WIDTH = 300;
+/** ~20% от типичной ширины панели (1200px) */
+const DEFAULT_SIDEBAR_WIDTH = 240;
 const MIN_SIDEBAR_WIDTH = 150;
 const MAX_SIDEBAR_WIDTH = 600;
 
@@ -895,9 +1186,10 @@ function getGitForgePanelHtml(
     MIN_SIDEBAR_WIDTH,
     Math.min(MAX_SIDEBAR_WIDTH, sidebarWidthPx),
   );
+  const lang = vscode.env.language; // ru, en, etc.
   const cspSource = webview.cspSource;
   return `<!DOCTYPE html>
-<html lang="ru">
+<html lang="${lang}">
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -906,7 +1198,7 @@ function getGitForgePanelHtml(
 	<link rel="stylesheet" href="${codiconsCssUri.toString()}">
 </head>
 <body>
-	<div id="root" data-sidebar-width="${safeWidth}"></div>
+	<div id="root" data-sidebar-width="${safeWidth}" data-lang="${lang}"></div>
 	<script src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
@@ -922,6 +1214,7 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly repoManager: RepoManager,
+    private readonly changedFilesTreeProvider?: ChangedFilesTreeProvider,
   ) {}
 
   /** Уведомить webview об изменении состояния Git (новый коммит, смена ветки и т.д.). */
@@ -1021,6 +1314,16 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
           this.lastContextMenuBranchRef = msg.branchRef;
           return;
         }
+        if (msg.type === "selectedCommitChanged") {
+          const m = msg as { commitHash?: string; files?: WebviewChangedFile[] };
+          const commitHash =
+            typeof m.commitHash === "string" ? m.commitHash : null;
+          const files = Array.isArray(m.files) ? m.files : [];
+          const repo = await this.repoManager.getCurrentRepo();
+          const repoRoot = repo?.rootUri.fsPath;
+          this.changedFilesTreeProvider?.setData(commitHash, files, repoRoot);
+          return;
+        }
         if (msg.type === "command" && msg.command) {
           const repo = await this.repoManager.getCurrentRepo();
           if (!repo) {
@@ -1045,6 +1348,7 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
               fromHash,
               status,
               DiffSide.Old,
+              toHash,
             );
             const rightUri = encodeDiffDocUri(
               repoRoot,
@@ -1121,11 +1425,11 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
               const errMessage = err instanceof Error ? err.message : String(err);
               const isNotMerged = /is not fully merged/i.test(errMessage);
               if (isNotMerged) {
-                const forceDelete = "Force delete";
-                const cancel = "Cancel";
+                const forceDelete = vscode.l10n.t("deleteBranch.forceDelete");
+                const cancel = vscode.l10n.t("deleteBranch.cancel");
                 void vscode.window
                   .showWarningMessage(
-                    `Branch "${branchName}" is not fully merged. Delete anyway?`,
+                    vscode.l10n.t("deleteBranch.notMerged", branchName),
                     { modal: true },
                     forceDelete,
                     cancel
@@ -1135,7 +1439,7 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
                       try {
                         tryDeleteBranch(true);
                         void vscode.window.showInformationMessage(
-                          `Branch "${branchName}" deleted.`
+                          vscode.l10n.t("deleteBranch.deleted", branchName),
                         );
                       } catch (forceErr) {
                         log.errorException(forceErr, "deleteBranch (force)");
@@ -1247,11 +1551,11 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
             if (!branchRef) return;
             const oldName = branchRef.includes("/") ? branchRef.replace(/^[^/]+\//, "") : branchRef;
             const newName = await vscode.window.showInputBox({
-              title: "Rename branch",
-              prompt: "New branch name",
+              title: vscode.l10n.t("renameBranch.title"),
+              prompt: vscode.l10n.t("renameBranch.prompt"),
               value: oldName,
               validateInput(value) {
-                if (!value?.trim()) return "Name cannot be empty";
+                if (!value?.trim()) return vscode.l10n.t("renameBranch.nameEmpty");
                 return null;
               },
             });
@@ -1262,7 +1566,9 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
                 encoding: "utf8",
               });
               this.notifyGitStateChanged();
-              void vscode.window.showInformationMessage(`Branch renamed to ${newName.trim()}`);
+              void vscode.window.showInformationMessage(
+                vscode.l10n.t("renameBranch.renamed", newName.trim()),
+              );
             } catch (err) {
               log.errorException(err, "renameBranch");
               void vscode.window.showErrorMessage(err instanceof Error ? err.message : String(err));
@@ -1276,17 +1582,17 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
             const headCommit = repo.state.HEAD?.commit;
             if (headCommit !== commitHash) {
               void vscode.window.showWarningMessage(
-                "Можно изменить только сообщение последнего коммита (HEAD). Выберите последний коммит в списке.",
+                vscode.l10n.t("editCommit.onlyHead"),
               );
               return;
             }
             const newMessage = await vscode.window.showInputBox({
-              title: "Edit commit message",
-              prompt: "Измените текст сообщения коммита",
+              title: vscode.l10n.t("editCommit.title"),
+              prompt: vscode.l10n.t("editCommit.prompt"),
               value: message,
               validateInput(value) {
                 if (!value?.trim()) {
-                  return "Сообщение не может быть пустым";
+                  return vscode.l10n.t("editCommit.messageEmpty");
                 }
                 return null;
               },
@@ -1300,7 +1606,9 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
                 encoding: "utf8",
               });
               this.notifyGitStateChanged();
-              void vscode.window.showInformationMessage("Сообщение коммита изменено.");
+              void vscode.window.showInformationMessage(
+                vscode.l10n.t("editCommit.done"),
+              );
             } catch (err) {
               log.errorException(err, "editCommitMessage");
               const errMsg = err instanceof Error ? err.message : String(err);
@@ -1351,15 +1659,106 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
   }
 }
 
+/**
+ * Найти путь файла в указанной ревизии, если он был переименован.
+ * Возвращает старый путь (в котором файл существовал в commit) или null.
+ */
+function findFilePathInRevision(
+  repo: string,
+  commit: string,
+  currentPath: string,
+): string | null {
+  const pathNorm = currentPath.replace(/\\/g, "/");
+  const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+  let parent: string;
+  try {
+    parent = execSync(`git rev-parse ${JSON.stringify(commit + "^")}`, {
+      cwd: repo,
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    parent = emptyTree;
+  }
+  try {
+    const out = execSync(
+      `git diff --name-status --find-renames --diff-filter=AMDR -z ${JSON.stringify(parent)} ${JSON.stringify(commit)}`,
+      { cwd: repo, encoding: "utf8", maxBuffer: 2 * 1024 * 1024 },
+    );
+    const parts = out.split("\0").filter((s) => s.length > 0);
+    for (let i = 0; i < parts.length; ) {
+      const statusToken = parts[i];
+      if (!statusToken) {
+        i += 1;
+        continue;
+      }
+      const statusChar = statusToken.slice(0, 1).toUpperCase();
+      const isRename = statusChar === "R";
+      if (isRename && i + 2 < parts.length) {
+        const oldPath = parts[i + 1].replace(/\\/g, "/");
+        const newPath = parts[i + 2].replace(/\\/g, "/");
+        if (newPath === pathNorm) return oldPath;
+        i += 3;
+      } else if (i + 1 < parts.length) {
+        i += 2;
+      } else {
+        i += 1;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
 /** Получить содержимое файла на указанной ревизии (для Diff View). */
-const getCommitFile: GetCommitFileFn = async (repo, commit, filePath) => {
-  const rev = `${commit}:${filePath.replace(/\\/g, "/")}`;
-  const out = execSync(`git show ${JSON.stringify(rev)}`, {
-    cwd: repo,
-    encoding: "utf8",
-    maxBuffer: 10 * 1024 * 1024,
-  });
-  return out;
+const getCommitFile: GetCommitFileFn = async (
+  repo,
+  commit,
+  filePath,
+  partnerCommit,
+) => {
+  const pathNorm = filePath.replace(/\\/g, "/");
+  const rev = `${commit}:${pathNorm}`;
+  try {
+    const out = execSync(`git show ${JSON.stringify(rev)}`, {
+      cwd: repo,
+      encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return out;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      /exists on disk, but not in|did not exist in|path .* does not exist/i.test(
+        msg,
+      )
+    ) {
+      const pathInRev = findFilePathInRevision(repo, commit, pathNorm);
+      if (pathInRev) {
+        try {
+          return execSync(`git show ${JSON.stringify(commit + ":" + pathInRev)}`, {
+            cwd: repo,
+            encoding: "utf8",
+            maxBuffer: 10 * 1024 * 1024,
+          });
+        } catch {
+          // fall through
+        }
+      }
+      if (partnerCommit) {
+        try {
+          return execSync(
+            `git show ${JSON.stringify(partnerCommit + ":" + pathNorm)}`,
+            { cwd: repo, encoding: "utf8", maxBuffer: 10 * 1024 * 1024 },
+          );
+        } catch {
+          // fall through
+        }
+      }
+      return "";
+    }
+    throw err;
+  }
 };
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -1380,7 +1779,7 @@ function runActivate(context: vscode.ExtensionContext): void {
   });
   if (lifecycle.stage === "install") {
     void vscode.window.showInformationMessage(
-      "Git Forge установлен. Откройте панель Git Forge для работы с репозиторием.",
+      vscode.l10n.t("lifecycle.installed"),
     );
   } else if (lifecycle.stage === "update" && lifecycle.previousVersion) {
     // При желании можно показать «Что нового» или открыть CHANGELOG
@@ -1439,7 +1838,18 @@ function runActivate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(gitHeadWatcher);
 
   const treeProvider = new GitForgeTreeProvider();
-  const gitForgeProvider = new GitForgePanelViewProvider(context, repoManager);
+  const changedFilesDecorationProvider = new ChangedFilesDecorationProvider();
+  context.subscriptions.push(
+    vscode.window.registerFileDecorationProvider(changedFilesDecorationProvider),
+  );
+  const changedFilesTreeProvider = new ChangedFilesTreeProvider(
+    changedFilesDecorationProvider,
+  );
+  const gitForgeProvider = new GitForgePanelViewProvider(
+    context,
+    repoManager,
+    changedFilesTreeProvider,
+  );
   // Панель внизу (вкладка рядом с Терминалом) — webview с сайдбаром (300px, ресайз) + контент
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -1447,6 +1857,12 @@ function runActivate(context: vscode.ExtensionContext): void {
       gitForgeProvider,
     ),
   );
+  // Дерево «Changed Files» в том же контейнере — нативный вид как в проводнике
+  const changedFilesTreeView = vscode.window.createTreeView(
+    "vs-git-forge.changedFilesView",
+    { treeDataProvider: changedFilesTreeProvider },
+  );
+  context.subscriptions.push(changedFilesTreeView);
 
   // Подписка на обновления Git: коммиты, ветки, checkout (как в vscode-git-graph)
   const setupGitStateWatchers = (): void => {
@@ -1525,10 +1941,74 @@ function runActivate(context: vscode.ExtensionContext): void {
     ),
   );
 
+  // Открыть diff по клику на файл в нативном дереве «Changed Files»
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "vs-git-forge.openChangedFileDiff",
+      async (
+        commitHash: string,
+        filePath: string,
+        status: "added" | "modified" | "deleted",
+        oldFilePath?: string,
+      ) => {
+        const repo = await repoManager.getCurrentRepo();
+        if (!repo) return;
+        const root = repo.rootUri.fsPath;
+        let fromHash: string;
+        let toHash: string;
+        const emptyTree =
+          "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+        if (commitHash === "UNCOMMITTED") {
+          fromHash = "HEAD";
+          toHash = DIFF_UNCOMMITTED;
+        } else {
+          try {
+            fromHash = execSync(`git rev-parse ${JSON.stringify(commitHash + "^")}`, {
+              cwd: root,
+              encoding: "utf8",
+            }).trim();
+          } catch {
+            fromHash = emptyTree;
+          }
+          toHash = commitHash;
+        }
+        const statusEnum =
+          status === "added"
+            ? GitFileStatus.Added
+            : status === "deleted"
+              ? GitFileStatus.Deleted
+              : GitFileStatus.Modified;
+        const leftPath = oldFilePath ?? filePath;
+        const leftUri = encodeDiffDocUri(
+          root,
+          leftPath,
+          fromHash,
+          statusEnum,
+          DiffSide.Old,
+          toHash,
+        );
+        const rightUri = encodeDiffDocUri(
+          root,
+          filePath,
+          toHash,
+          statusEnum,
+          DiffSide.New,
+        );
+        const title = `${path.basename(filePath)} (${fromHash.slice(0, 7)} ↔ ${toHash === DIFF_UNCOMMITTED ? "working" : toHash.slice(0, 7)})`;
+        void vscode.commands.executeCommand(
+          "vscode.diff",
+          leftUri,
+          rightUri,
+          title,
+        );
+      },
+    ),
+  );
+
   const cmdDisposable = vscode.commands.registerCommand(
     "vs-git-forge.helloWorld",
     () => {
-      vscode.window.showInformationMessage("Hello World from Git Forge!");
+      vscode.window.showInformationMessage(vscode.l10n.t("helloWorld"));
     },
   );
   context.subscriptions.push(cmdDisposable);

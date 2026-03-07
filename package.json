@@ -11,27 +11,33 @@
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
+  "l10n": "./l10n",
   "contributes": {
     "commands": [
       {
         "command": "vs-git-forge.helloWorld",
-        "title": "Hello World"
+        "title": "%command.helloWorld.title%"
       },
       {
         "command": "vs-git-forge.openGitForge",
-        "title": "Open Git Forge"
+        "title": "%command.openGitForge.title%"
       },
       {
         "command": "vs-git-forge.createBranch",
-        "title": "Git Forge: Создать ветку"
+        "title": "%command.createBranch.title%"
       },
       {
         "command": "vs-git-forge.createBranchFromContext",
-        "title": "Создать ветку из этой"
+        "title": "%command.createBranchFromContext.title%"
       },
       {
         "command": "vs-git-forge.checkoutBranchFromContext",
-        "title": "Checkout"
+        "title": "%command.checkoutBranchFromContext.title%"
+      },
+      {
+        "command": "vs-git-forge.openChangedFileDiff",
+        "title": "%command.openChangedFileDiff.title%",
+        "when": "false"
       }
     ],
     "menus": {
@@ -56,14 +62,14 @@
       "panel": [
         {
           "id": "gitForge",
-          "title": "Git Forge",
+          "title": "%viewContainer.panel.title%",
           "icon": "resources/panel-icon.svg"
         }
       ],
       "activitybar": [
         {
           "id": "gitForgeSidebar",
-          "title": "Git Forge",
+          "title": "%viewContainer.sidebar.title%",
           "icon": "resources/panel-icon.svg"
         }
       ]
@@ -73,13 +79,17 @@
         {
           "type": "webview",
           "id": "vs-git-forge.gitForgeView",
-          "name": "Git Forge"
+          "name": "%view.gitForge.name%"
+        },
+        {
+          "id": "vs-git-forge.changedFilesView",
+          "name": "%view.changedFiles.name%"
         }
       ],
       "gitForgeSidebar": [
         {
           "id": "vs-git-forge.gitForgeSidebarView",
-          "name": "Git Forge"
+          "name": "%view.sidebar.name%"
         }
       ]
     }

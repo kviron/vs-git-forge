@@ -1,0 +1,13 @@
+{
+  "command.helloWorld.title": "Hello World",
+  "command.openGitForge.title": "Open Git Forge",
+  "command.createBranch.title": "Git Forge: Create Branch",
+  "command.createBranchFromContext.title": "Create branch from this",
+  "command.checkoutBranchFromContext.title": "Checkout",
+  "command.openChangedFileDiff.title": "Open Diff",
+  "viewContainer.panel.title": "Git Forge",
+  "viewContainer.sidebar.title": "Git Forge",
+  "view.gitForge.name": "Git Forge",
+  "view.changedFiles.name": "Changed Files",
+  "view.sidebar.name": "Git Forge"
+}

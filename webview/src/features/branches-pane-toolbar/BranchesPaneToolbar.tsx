@@ -15,6 +15,7 @@ import {
   VsCollapseAll,
 } from 'solid-icons/vs';
 import { IconButton } from '../../shared/ui/IconButton';
+import { t } from '../../shared/i18n';
 import { useSelectedBranch } from '../../shared/context';
 import { getBranchId } from '../../shared/lib/branch';
 import { vscodeGitApi, postMessageToHost } from '../../shared/api';
@@ -23,10 +24,10 @@ import { log } from '../../shared/logger';
 const ICON_SIZE = 16;
 
 const TOOLBAR_ITEMS = [
-  { icon: VsChevronLeft, title: 'Скрыть панель' },
+  { icon: VsChevronLeft, titleKey: 'toolbar.hidePanel' as const },
   { icon: VsAdd, title: 'New branch' },
   { icon: VsRefresh, title: 'Update selected' },
-  { icon: VsTrash, title: 'Удалить ветку' },
+  { icon: VsTrash, titleKey: 'toolbar.deleteBranch' as const },
   { icon: VsGitCompare, title: 'Compare with current' },
   { icon: VsSearch, title: 'Show my branches' },
   { icon: VsGitFetch, title: 'Fetch' },
@@ -105,13 +106,13 @@ export function BranchesPaneToolbar(props: BranchesPaneToolbarProps) {
   return (
     <div class="branches-pane-toolbar" role="toolbar">
       {TOOLBAR_ITEMS.map((item, index) => {
+        const title = 'titleKey' in item ? t(item.titleKey) : item.title;
         if (index === DELETE_BRANCH_ICON_INDEX) {
           return (
             <IconButton
-              key={index}
               iconSlot={<VsTrash size={ICON_SIZE} />}
-              title={item.title}
-              active={index === ACTIVE_ICON_INDEX}
+              title={title}
+              active={false}
               onClick={deleteEnabled ? handleDeleteBranch : undefined}
             />
           );
@@ -130,7 +131,7 @@ export function BranchesPaneToolbar(props: BranchesPaneToolbarProps) {
         return (
           <IconButton
             iconSlot={<IconComponent size={ICON_SIZE} />}
-            title={item.title}
+            title={title}
             active={index === ACTIVE_ICON_INDEX}
             disabled={!deleteEnabled}
             onClick={onClick}

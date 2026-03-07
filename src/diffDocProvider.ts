@@ -27,6 +27,7 @@ export type GetCommitFileFn = (
   repo: string,
   commit: string,
   filePath: string,
+  partnerCommit?: string,
 ) => Promise<string>;
 
 /**
@@ -62,7 +63,12 @@ export class DiffDocProvider implements vscode.TextDocumentContentProvider {
       return "";
     }
 
-    return this.getCommitFile(request.repo, request.commit, request.filePath)
+    return this.getCommitFile(
+      request.repo,
+      request.commit,
+      request.filePath,
+      request.partnerCommit,
+    )
       .then((contents) => {
         this.docs.set(uri.toString(), contents);
         return contents;
@@ -84,6 +90,8 @@ export interface DiffDocUriData {
   commit: string;
   repo: string;
   exists: boolean;
+  /** Коммит второй стороны (для левой — правый), чтобы при «файл добавлен» подставить его содержимое. */
+  partnerCommit?: string;
 }
 
 /**
@@ -97,6 +105,7 @@ export function encodeDiffDocUri(
   commit: string,
   type: GitFileStatus,
   diffSide: DiffSide,
+  partnerCommit?: string,
 ): vscode.Uri {
   if (commit === UNCOMMITTED && type !== GitFileStatus.Deleted) {
     return vscode.Uri.file(path.join(repo, filePath));
@@ -112,6 +121,7 @@ export function encodeDiffDocUri(
     commit,
     repo,
     exists: !fileDoesNotExist,
+    ...(partnerCommit ? { partnerCommit } : {}),
   };
 
   let extension = "";

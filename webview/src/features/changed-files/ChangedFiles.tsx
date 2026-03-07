@@ -7,6 +7,7 @@ import {
   type FilePathTreeNode,
 } from '@ark-ui/solid/tree-view';
 import { sendViewDiff } from '../../shared/api/vscodeApi';
+import { t } from '../../shared/i18n';
 import type { Commit, ChangedFile } from '../../shared/lib/types';
 import { UNCOMMITTED_HASH } from '../../shared/lib/types';
 
@@ -166,7 +167,7 @@ export function ChangedFiles(props: ChangedFilesProps) {
       {count() === 0 ? (
         <>
           <div class="changed-files__title">{title()}</div>
-          <div class="changed-files__empty">Нет изменённых файлов</div>
+          <div class="changed-files__empty">{t("changedFiles.empty")}</div>
         </>
       ) : (
         <TreeView.Root

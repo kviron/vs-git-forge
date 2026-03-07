@@ -1,16 +1,15 @@
 import { createSignal, createMemo, createEffect, onMount, useContext } from "solid-js";
 import { vscodeGitApi, VscodeGitApi, onGitStateChanged, postMessageToHost } from "../../shared/api";
 import { log } from "../../shared/logger";
+import { t } from "../../shared/i18n";
 import { SelectedBranchContext } from "../../shared/context/SelectedBranchContext";
 import type { Branch, Commit, ChangedFile, Tag } from "../../shared/lib/types";
 import { UNCOMMITTED_HASH } from "../../shared/lib/types";
 import { BranchesPane } from "../../widgets/branches-pane";
-import { CommitDetailsPanel } from "../../widgets/commit-details-panel";
 import { CommitHistory } from "../../widgets/commit-history";
 
 const MIN_SIDEBAR = 180;
 const MAX_LEFT = 500;
-const MAX_RIGHT = 500;
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
@@ -19,7 +18,6 @@ function clamp(value: number, min: number, max: number) {
 const EMPTY_BRANCHES: Branch[] = [];
 const EMPTY_TAGS: Tag[] = [];
 
-const NO_REPO_MESSAGE = "Не инициализирован Git-репозиторий";
 
 export function GitViewPage() {
   const refContext = useContext(SelectedBranchContext);
@@ -29,14 +27,14 @@ export function GitViewPage() {
   const setSelectedTag = refContext.setSelectedTag;
 
   const root = typeof document !== "undefined" ? document.getElementById("root") : null;
-  let initialLeft = Number(root?.dataset?.sidebarWidth) || 280;
-  if (Number.isNaN(initialLeft) || initialLeft <= 0) initialLeft = 280;
-  const [leftWidth, setLeftWidth] = createSignal(
-    clamp(initialLeft, MIN_SIDEBAR, MAX_LEFT),
-  );
-  const [rightWidth, setRightWidth] = createSignal(
-    clamp(320, MIN_SIDEBAR, MAX_RIGHT),
-  );
+  const savedWidth = Number(root?.dataset?.sidebarWidth);
+  const defaultWidth =
+    typeof window !== "undefined" && window.innerWidth > 0
+      ? Math.round(window.innerWidth * 0.2)
+      : 240;
+  let initialLeft = Number.isNaN(savedWidth) || savedWidth <= 0 ? defaultWidth : savedWidth;
+  initialLeft = clamp(initialLeft, MIN_SIDEBAR, MAX_LEFT);
+  const [leftWidth, setLeftWidth] = createSignal(initialLeft);
   const [commits, setCommits] = createSignal<Commit[]>([]);
   const [commitsLoading, setCommitsLoading] = createSignal(false);
   const [selectedCommit, setSelectedCommit] = createSignal<Commit | null>(null);
@@ -71,6 +69,31 @@ export function GitViewPage() {
       .getCommitChangedFiles(c.hash)
       .then(setCommitChangedFiles)
       .catch(() => setCommitChangedFiles([]));
+  });
+
+  /** Синхронизация с нативной вкладкой «Changed Files»: коммит, файлы и текст (message, author, date) */
+  createEffect(() => {
+    const c = selectedCommit();
+    const hash = c?.hash ?? null;
+    const files =
+      c?.hash === UNCOMMITTED_HASH
+        ? (c.uncommittedFiles ?? [])
+        : commitChangedFiles();
+    postMessageToHost({
+      type: "selectedCommitChanged",
+      commitHash: hash,
+      files: files.map((f) => ({
+        path: f.path,
+        name: f.name,
+        status: f.status,
+      })),
+      commitMessage: c?.message,
+      commitAuthor: c?.author,
+      commitAuthorEmail: c?.authorEmail,
+      commitDate: c?.date,
+      commitShortHash: c?.shortHash,
+      commitBranches: c?.branches,
+    });
   });
 
   /** Все ветки плоским списком для фильтра (локальные + удалённые) */
@@ -167,7 +190,7 @@ export function GitViewPage() {
         setTags(Array.isArray(p?.tags) ? p.tags : EMPTY_TAGS);
       })
       .catch(() => {
-        setBranchesError(NO_REPO_MESSAGE);
+        setBranchesError(t("repo.notInitialized"));
         setCurrentBranch("");
         setLocalBranches(EMPTY_BRANCHES);
         setRemoteBranches(EMPTY_BRANCHES);
@@ -183,7 +206,7 @@ export function GitViewPage() {
 
   onMount(() => {
     if (!VscodeGitApi.isAvailable()) {
-      setBranchesError(NO_REPO_MESSAGE);
+      setBranchesError(t("repo.notInitialized"));
       setBranchesLoading(false);
       return;
     }
@@ -212,32 +235,23 @@ export function GitViewPage() {
 
   onMount(() => {
     const leftEl = document.getElementById("left-pane");
-    const rightEl = document.getElementById("right-pane");
     const resizerLeft = document.getElementById("resizer-left");
-    const resizerRight = document.getElementById("resizer-right");
 
-    let dragging: "left" | "right" | null = null;
+    let dragging = false;
     let startX = 0;
     let startLeft = 0;
-    let startRight = 0;
 
     const onMouseMove = (e: MouseEvent) => {
-      if (!dragging || !leftEl || !rightEl) return;
+      if (!dragging || !leftEl) return;
       const dx = e.clientX - startX;
-      if (dragging === "left") {
-        const w = clamp(startLeft + dx, MIN_SIDEBAR, MAX_LEFT);
-        leftEl.style.width = `${w}px`;
-        setLeftWidth(w);
-      } else {
-        const w = clamp(startRight - dx, MIN_SIDEBAR, MAX_RIGHT);
-        rightEl.style.width = `${w}px`;
-        setRightWidth(w);
-      }
+      const w = clamp(startLeft + dx, MIN_SIDEBAR, MAX_LEFT);
+      leftEl.style.width = `${w}px`;
+      setLeftWidth(w);
     };
 
     const onMouseUp = () => {
       if (!dragging) return;
-      dragging = null;
+      dragging = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       if (leftEl) {
@@ -247,18 +261,9 @@ export function GitViewPage() {
 
     resizerLeft?.addEventListener("mousedown", (e: MouseEvent) => {
       e.preventDefault();
-      dragging = "left";
+      dragging = true;
       startX = e.clientX;
       startLeft = leftEl?.offsetWidth ?? leftWidth();
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    });
-
-    resizerRight?.addEventListener("mousedown", (e: MouseEvent) => {
-      e.preventDefault();
-      dragging = "right";
-      startX = e.clientX;
-      startRight = rightEl?.offsetWidth ?? rightWidth();
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
     });
@@ -298,7 +303,7 @@ export function GitViewPage() {
               class="git-view-page__empty-btn"
               onClick={handleInitRepo}
             >
-              Создать репозиторий
+              {t("repo.createRepo")}
             </button>
           )}
         </div>
@@ -327,7 +332,7 @@ export function GitViewPage() {
           <div
             id="resizer-left"
             class="git-view-page__resizer git-view-page__resizer--left"
-            title="Изменить ширину левой панели"
+            title={t("panel.resizeTitle")}
           />
           <main class="git-view-page__center">
             <CommitHistory
@@ -342,31 +347,11 @@ export function GitViewPage() {
               authors={authorsFromCommits()}
               userFilter={userFilter()}
               onUserFilterChange={handleUserFilterChange}
-              userLabel={userFilter() ? `User: ${userFilter()}` : "User: Все авторы"}
+              userLabel={userFilter() ? t("user.label", userFilter()!) : t("user.allAuthors")}
               searchQuery={searchQuery()}
               onSearchChange={handleSearchChange}
             />
           </main>
-          <div
-            id="resizer-right"
-            class="git-view-page__resizer git-view-page__resizer--right"
-            title="Изменить ширину правой панели"
-          />
-          <aside
-            id="right-pane"
-            class="git-view-page__right"
-            style={{ width: `${rightWidth()}px` }}
-          >
-            <CommitDetailsPanel
-              commit={selectedCommit()}
-              changedFiles={
-                selectedCommit()?.hash === UNCOMMITTED_HASH
-                  ? (selectedCommit()?.uncommittedFiles ?? [])
-                  : commitChangedFiles()
-              }
-              repoName="clubm8-web"
-            />
-          </aside>
         </>
       )}
     </div>
