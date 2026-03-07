@@ -18,6 +18,18 @@
   "main": "./dist/extension.js",
   "l10n": "./l10n",
   "contributes": {
+    "configuration": {
+      "title": "Git Forge",
+      "properties": {
+        "gitForge.panelViewSizeSteps": {
+          "type": "number",
+          "default": 4,
+          "minimum": 0,
+          "maximum": 20,
+          "description": "When opening the Git Forge panel, run 'Increase View Size' this many times so the Git Forge webview gets more width than the Changed Files view. 0 = do not adjust (50/50 split)."
+        }
+      }
+    },
     "commands": [
       {
         "command": "vs-git-forge.helloWorld",
@@ -43,9 +55,136 @@
         "command": "vs-git-forge.openChangedFileDiff",
         "title": "%command.openChangedFileDiff.title%",
         "when": "false"
+      },
+      {
+        "command": "vs-git-forge.changedFileDiffOnDoubleClick",
+        "title": "Open diff on double-click",
+        "when": "false"
+      },
+      {
+        "command": "vs-git-forge.changedFileShowDiff",
+        "title": "%command.changedFile.showDiff%",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "vs-git-forge.changedFileShowDiffNewTab",
+        "title": "%command.changedFile.showDiffNewTab%",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "vs-git-forge.changedFileCompareWithLocal",
+        "title": "%command.changedFile.compareWithLocal%",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "vs-git-forge.changedFileCompareBeforeWithLocal",
+        "title": "%command.changedFile.compareBeforeWithLocal%",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "vs-git-forge.changedFileEditSource",
+        "title": "%command.changedFile.editSource%",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "vs-git-forge.changedFileOpenRepoVersion",
+        "title": "%command.changedFile.openRepoVersion%",
+        "icon": "$(file)"
+      },
+      {
+        "command": "vs-git-forge.changedFileRevert",
+        "title": "%command.changedFile.revert%",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "vs-git-forge.changedFileCherryPick",
+        "title": "%command.changedFile.cherryPick%",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "vs-git-forge.changedFileCreatePatch",
+        "title": "%command.changedFile.createPatch%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "vs-git-forge.changedFileGetFromRevision",
+        "title": "%command.changedFile.getFromRevision%",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "vs-git-forge.changedFileHistoryUpToHere",
+        "title": "%command.changedFile.historyUpToHere%",
+        "icon": "$(history)"
+      },
+      {
+        "command": "vs-git-forge.changedFileShowChangesToParents",
+        "title": "%command.changedFile.showChangesToParents%",
+        "icon": "$(git-compare)"
       }
     ],
     "menus": {
+      "view/item/context": [
+        {
+          "command": "vs-git-forge.changedFileShowDiff",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(git-compare)"
+        },
+        {
+          "command": "vs-git-forge.changedFileShowDiffNewTab",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(git-compare)"
+        },
+        {
+          "command": "vs-git-forge.changedFileCompareWithLocal",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(git-compare)"
+        },
+        {
+          "command": "vs-git-forge.changedFileCompareBeforeWithLocal",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(git-compare)"
+        },
+        {
+          "command": "vs-git-forge.changedFileEditSource",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(edit)"
+        },
+        {
+          "command": "vs-git-forge.changedFileOpenRepoVersion",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(file)"
+        },
+        {
+          "command": "vs-git-forge.changedFileRevert",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(discard)"
+        },
+        {
+          "command": "vs-git-forge.changedFileCherryPick",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(git-branch)"
+        },
+        {
+          "command": "vs-git-forge.changedFileCreatePatch",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(add)"
+        },
+        {
+          "command": "vs-git-forge.changedFileGetFromRevision",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(arrow-down)"
+        },
+        {
+          "command": "vs-git-forge.changedFileHistoryUpToHere",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(history)"
+        },
+        {
+          "command": "vs-git-forge.changedFileShowChangesToParents",
+          "when": "view == vs-git-forge.changedFilesView && viewItem == file",
+          "icon": "$(git-compare)"
+        }
+      ],
       "webview/context": [
         {
           "command": "vs-git-forge.createBranchFromContext",
@@ -70,13 +209,6 @@
           "title": "%viewContainer.panel.title%",
           "icon": "resources/panel-icon.svg"
         }
-      ],
-      "activitybar": [
-        {
-          "id": "gitForgeSidebar",
-          "title": "%viewContainer.sidebar.title%",
-          "icon": "resources/panel-icon.svg"
-        }
       ]
     },
     "views": {
@@ -89,12 +221,6 @@
         {
           "id": "vs-git-forge.changedFilesView",
           "name": "%view.changedFiles.name%"
-        }
-      ],
-      "gitForgeSidebar": [
-        {
-          "id": "vs-git-forge.gitForgeSidebarView",
-          "name": "%view.sidebar.name%"
         }
       ]
     }

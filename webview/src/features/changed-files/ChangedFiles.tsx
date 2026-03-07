@@ -6,10 +6,17 @@ import {
   useTreeViewContext,
   type FilePathTreeNode,
 } from '@ark-ui/solid/tree-view';
-import { sendViewDiff } from '../../shared/api/vscodeApi';
+import { getContextMenu } from '../../shared/api/contextMenu';
+import { sendViewDiff, sendViewFileAtRevision, postMessageToHost } from '../../shared/api/vscodeApi';
+import { log } from '../../shared/logger';
 import { t } from '../../shared/i18n';
 import type { Commit, ChangedFile } from '../../shared/lib/types';
 import { UNCOMMITTED_HASH } from '../../shared/lib/types';
+
+/** Иконка codicon для контекстного меню (VS Code webview) */
+function codicon(name: string): string {
+  return `<span class="codicon codicon-${name}" aria-hidden="true"></span>`;
+}
 
 /** Хеш пустого дерева Git (для root-коммитов в diff) */
 const EMPTY_TREE_HASH = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
@@ -35,7 +42,9 @@ interface TreeNodeProps {
   filesByPath: Map<string, ChangedFile>;
   isClickable: boolean;
   selectedCommitHash?: string | null;
+  commit?: Commit | null;
   onFileClick: (file: ChangedFile) => void;
+  onFileContextMenu?: (file: ChangedFile, e: MouseEvent) => void;
 }
 
 function TreeNode(props: TreeNodeProps) {
@@ -58,6 +67,20 @@ function TreeNode(props: TreeNodeProps) {
     const v = value();
     const file = v ? props.filesByPath.get(v) : undefined;
     if (file) props.onFileClick(file);
+  };
+
+  const onFileContextMenu = (e: MouseEvent) => {
+    log.debug('ChangedFiles TreeNode: onFileContextMenu вызван, value=', value());
+    const v = value();
+    const file = v ? props.filesByPath.get(v) : undefined;
+    if (!file) {
+      log.debug('ChangedFiles TreeNode: file не найден для value=', v);
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    log.debug('ChangedFiles TreeNode: вызываем onFileContextMenu для', file.path);
+    props.onFileContextMenu?.(file, e);
   };
 
   return (
@@ -85,7 +108,9 @@ function TreeNode(props: TreeNodeProps) {
                   filesByPath={props.filesByPath}
                   isClickable={props.isClickable}
                   selectedCommitHash={props.selectedCommitHash}
+                  commit={props.commit}
                   onFileClick={props.onFileClick}
+                  onFileContextMenu={props.onFileContextMenu}
                 />
               )}
             </Index>
@@ -97,6 +122,7 @@ function TreeNode(props: TreeNodeProps) {
           classList={{ 'changed-files__item--clickable': props.isClickable }}
           data-value={value()}
           onClick={handleItemClick}
+          onContextMenu={onFileContextMenu}
           title={titleAttr()}
         >
           <span class="changed-files__icon codicon codicon-file" aria-hidden="true" />
@@ -162,6 +188,224 @@ export function ChangedFiles(props: ChangedFilesProps) {
 
   const rootChildren = () => collection().getNodeChildren(collection().rootNode);
 
+  const showFileContextMenu = (file: ChangedFile, e: MouseEvent) => {
+    log.debug('ChangedFiles: showFileContextMenu для файла', file.path);
+    const commit = props.commit;
+    const isUncommitted = props.selectedCommitHash === UNCOMMITTED_HASH;
+    const fromHash = commit && commit.hash !== UNCOMMITTED_HASH
+      ? (commit.parents?.[0] ?? EMPTY_TREE_HASH)
+      : 'HEAD';
+    const toHash = commit?.hash ?? UNCOMMITTED_HASH;
+    const status = file.status ?? 'modified';
+    const oldPath = file.oldPath ?? file.path;
+
+    const menu = getContextMenu();
+    menu.show(
+      [
+        [
+          {
+            title: 'Show Diff',
+            visible: true,
+            shortcut: 'Ctrl+D',
+            icon: codicon('git-compare'),
+            onClick: () => {
+              sendViewDiff({
+                fromHash,
+                toHash,
+                oldFilePath: oldPath,
+                newFilePath: file.path,
+                type: status,
+              });
+            },
+          },
+          {
+            title: 'Show Diff in a New Tab',
+            visible: true,
+            icon: codicon('git-compare'),
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'viewDiff',
+                params: {
+                  fromHash,
+                  toHash,
+                  oldFilePath: oldPath,
+                  newFilePath: file.path,
+                  type: status,
+                  openInNewTab: true,
+                },
+              });
+            },
+          },
+        ],
+        [
+          {
+            title: 'Compare with Local',
+            visible: !isUncommitted && !!commit,
+            icon: codicon('git-compare'),
+            onClick: () => {
+              sendViewDiff({
+                fromHash: commit!.hash,
+                toHash: UNCOMMITTED_HASH,
+                oldFilePath: oldPath,
+                newFilePath: file.path,
+                type: status,
+              });
+            },
+          },
+          {
+            title: 'Compare Before with Local',
+            visible: !isUncommitted && !!commit,
+            icon: codicon('git-compare'),
+            onClick: () => {
+              sendViewDiff({
+                fromHash,
+                toHash: UNCOMMITTED_HASH,
+                oldFilePath: oldPath,
+                newFilePath: file.path,
+                type: status,
+              });
+            },
+          },
+        ],
+        [
+          {
+            title: 'Edit Source',
+            visible: true,
+            shortcut: 'F4',
+            icon: codicon('edit'),
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'openWorkingFile',
+                params: { filePath: file.path },
+              });
+            },
+          },
+          {
+            title: 'Open Repository Version',
+            visible: !isUncommitted && !!commit,
+            icon: codicon('file'),
+            onClick: () => {
+              sendViewFileAtRevision({
+                hash: commit!.hash,
+                filePath: file.path,
+                type: status,
+              });
+            },
+          },
+        ],
+        [
+          {
+            title: 'Revert Selected Changes',
+            visible: isUncommitted,
+            icon: codicon('discard'),
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'revertWorkingFile',
+                params: { filePath: file.path },
+              });
+            },
+          },
+          {
+            title: 'Cherry-Pick Selected Changes',
+            visible: !isUncommitted && !!commit,
+            icon: codicon('git-branch'),
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'cherryPickFile',
+                params: { commitHash: commit!.hash, filePath: file.path },
+              });
+            },
+          },
+          {
+            title: 'Extract Selected Changes to Separate Commit...',
+            visible: true,
+            disabled: true,
+            onClick: () => {},
+          },
+          {
+            title: 'Drop Selected Changes',
+            visible: true,
+            disabled: true,
+            onClick: () => {},
+          },
+        ],
+        [
+          {
+            title: 'Create Patch...',
+            visible: !isUncommitted && !!commit,
+            icon: codicon('add'),
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'createPatchForFile',
+                params: { commitHash: commit!.hash, filePath: file.path, oldFilePath: oldPath },
+              });
+            },
+          },
+          {
+            title: 'Get from Revision',
+            visible: !isUncommitted && !!commit,
+            icon: codicon('arrow-down'),
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'getFileFromRevision',
+                params: { commitHash: commit!.hash, filePath: file.path },
+              });
+            },
+          },
+        ],
+        [
+          {
+            title: 'History Up to Here',
+            visible: !isUncommitted && !!commit,
+            icon: codicon('history'),
+            onClick: () => {
+              postMessageToHost({
+                type: 'command',
+                command: 'fileHistoryUpToCommit',
+                params: { commitHash: commit!.hash, filePath: file.path },
+              });
+            },
+          },
+          {
+            title: 'Show Changes to Parents',
+            visible: !isUncommitted && !!commit,
+            icon: codicon('git-compare'),
+            onClick: () => {
+              sendViewDiff({
+                fromHash,
+                toHash: commit!.hash,
+                oldFilePath: oldPath,
+                newFilePath: file.path,
+                type: status,
+              });
+            },
+          },
+        ],
+      ],
+      e,
+      document.body,
+    );
+  };
+
+  const onTreeContextMenu = (e: MouseEvent) => {
+    const item = (e.target as HTMLElement).closest?.('.changed-files__item');
+    if (!item) return;
+    const val = item.getAttribute('data-value');
+    const file = val ? filesByPath().get(val) : undefined;
+    if (file) {
+      e.preventDefault();
+      e.stopPropagation();
+      log.debug('ChangedFiles: контекстное меню по делегированию, файл', file.path);
+      showFileContextMenu(file, e);
+    }
+  };
+
   return (
     <div class="changed-files">
       {count() === 0 ? (
@@ -188,6 +432,7 @@ export function ChangedFiles(props: ChangedFilesProps) {
           <TreeView.Label id="changed-files-tree-label" class="changed-files__title">
             {title()}
           </TreeView.Label>
+          <div class="changed-files__tree-wrap" onContextMenu={onTreeContextMenu}>
           <TreeView.Tree class="changed-files__tree">
             <Index each={rootChildren()}>
               {(child, index) => (
@@ -198,11 +443,14 @@ export function ChangedFiles(props: ChangedFilesProps) {
                   filesByPath={filesByPath()}
                   isClickable={isClickable()}
                   selectedCommitHash={props.selectedCommitHash}
+                  commit={props.commit}
                   onFileClick={onFileClick}
+                  onFileContextMenu={showFileContextMenu}
                 />
               )}
             </Index>
           </TreeView.Tree>
+          </div>
         </TreeView.Root>
       )}
     </div>

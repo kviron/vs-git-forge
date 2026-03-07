@@ -1,5 +1,6 @@
 // The module 'vscode' contains the VS Code extensibility API
 import { execFileSync, execSync } from "child_process";
+import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import {
@@ -90,6 +91,107 @@ function getConfiguredRemotes(repoRoot: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** Значение из git config (user.email, user.avatarUrl и т.д.). undefined, если ключа нет. */
+function getGitConfigValue(repoRoot: string, key: string): string | undefined {
+  try {
+    const out = execSync(`git config --get ${JSON.stringify(key)}`, {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    return out.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** URL remote origin (https://github.com/owner/repo или https://gitlab.com/group/repo и т.д.). */
+function getRemoteOriginUrl(repoRoot: string): string | undefined {
+  return getGitConfigValue(repoRoot, "remote.origin.url");
+}
+
+type ParsedRemote =
+  | { host: "github"; owner: string; repo: string }
+  | { host: "gitlab"; baseUrl: string }
+  | null;
+
+function parseRemoteUrl(url: string): ParsedRemote {
+  try {
+    let u = url.trim().replace(/\.git$/i, "");
+    if (u.startsWith("git@")) {
+      u = u.replace(/^git@([^:]+):/, "https://$1/");
+    }
+    const m = u.match(/^(?:https?:\/\/)?([^/]+)\/([^/]+)\/([^/]+?)(?:\/|$)/);
+    if (!m) return null;
+    const [, hostname, a, b] = m;
+    const hostLower = hostname?.toLowerCase() ?? "";
+    if (hostLower === "github.com") {
+      return { host: "github", owner: a!, repo: b! };
+    }
+    if (hostLower === "gitlab.com" || hostLower.endsWith(".gitlab.com")) {
+      const base = u.startsWith("http") ? u.split("/").slice(0, 3).join("/") : `https://${hostname}`;
+      return { host: "gitlab", baseUrl: base };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Аватарки коммитов с GitHub API (sha -> avatar_url). */
+async function fetchGitHubCommitAvatars(
+  owner: string,
+  repo: string,
+  ref: string,
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const shaParam = ref && ref !== "HEAD" ? ref : undefined;
+    const q = shaParam ? `?per_page=100&sha=${encodeURIComponent(shaParam)}` : "?per_page=100";
+    const res = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits${q}`,
+      { headers: { Accept: "application/vnd.github.v3+json" } },
+    );
+    if (!res.ok) return map;
+    const data = (await res.json()) as Array<{ sha?: string; author?: { avatar_url?: string } }>;
+    if (!Array.isArray(data)) return map;
+    for (const c of data) {
+      const sha = c.sha;
+      const avatar = c.author?.avatar_url;
+      if (sha && avatar) {
+        map.set(sha, avatar);
+        if (sha.length >= 8) map.set(sha.slice(0, 8), avatar);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return map;
+}
+
+/** Аватарки по email с GitLab Avatar API (email -> avatar_url). */
+async function fetchGitLabAvatarsByEmail(
+  baseUrl: string,
+  emails: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  const apiBase = baseUrl.replace(/\/$/, "") + "/api/v4";
+  await Promise.all(
+    emails.map(async (email) => {
+      try {
+        const res = await fetch(
+          `${apiBase}/avatar?email=${encodeURIComponent(email)}&size=64`,
+        );
+        if (!res.ok) return;
+        const data = (await res.json()) as { avatar_url?: string };
+        if (data?.avatar_url) map.set(email.toLowerCase().trim(), data.avatar_url);
+      } catch {
+        // ignore
+      }
+    }),
+  );
+  return map;
 }
 
 let branchStatusBarSubscribed = false;
@@ -330,6 +432,8 @@ interface WebviewCommit {
   message: string;
   author: string;
   authorEmail?: string;
+  /** URL аватарки с хоста (GitHub/GitLab), если remote и автор найден там */
+  authorAvatarUrl?: string;
   date: string;
   dateRelative?: string;
   branches?: string[];
@@ -526,6 +630,17 @@ class ChangedFilesTreeProvider
     return items;
   }
 
+  /** Родитель узла (нужно для reveal() с выделением) */
+  getParent(element: ChangedFileTreeNode): vscode.ProviderResult<ChangedFileTreeNode> {
+    const idx = element.path.lastIndexOf("/");
+    if (idx <= 0) return undefined;
+    const parentPath = element.path.slice(0, idx);
+    const segment = parentPath.includes("/")
+      ? parentPath.slice(parentPath.lastIndexOf("/") + 1)
+      : parentPath;
+    return { kind: "folder", path: parentPath, segment };
+  }
+
   getTreeItem(element: ChangedFileTreeNode): vscode.TreeItem {
     const virtualPath =
       this.repoRoot !== null && this.repoRoot !== undefined
@@ -544,9 +659,7 @@ class ChangedFilesTreeProvider
       item.contextValue = "folder";
       const count = this.getFileCountInFolder(element.path);
       item.description =
-        count === 1
-          ? vscode.l10n.t("changedFiles.oneFile")
-          : vscode.l10n.t("changedFiles.filesCount", String(count));
+        count === 1 ? "1 file" : `${count} files`;
       if (virtualPath !== null && virtualPath !== undefined) {
         item.resourceUri = vscode.Uri.file(virtualPath);
       } else {
@@ -567,12 +680,12 @@ class ChangedFilesTreeProvider
             : "git-modified";
       item.iconPath = new vscode.ThemeIcon(iconId);
     }
-    item.contextValue = "file";
+    item.contextValue = element.status === "deleted" ? "fileDeleted" : "file";
     if (this.commitHash && element.kind === "file") {
       item.command = {
-        command: "vs-git-forge.openChangedFileDiff",
+        command: "vs-git-forge.changedFileDiffOnDoubleClick",
         title: vscode.l10n.t("command.openDiff.title"),
-        arguments: [this.commitHash, element.path, element.status, element.oldPath],
+        arguments: [this.commitHash, element.path, element.status ?? "modified", element.oldPath],
       };
     }
     return item;
@@ -580,6 +693,26 @@ class ChangedFilesTreeProvider
 
   getCurrentCommitHash(): string | null {
     return this.commitHash;
+  }
+
+  getRepoRoot(): string | null {
+    return this.repoRoot;
+  }
+
+  /** Найти файл по пути (нормализованному с прямыми слешами) для контекстного меню */
+  getFileByPath(filePath: string): WebviewChangedFile | undefined {
+    const norm = this.normalize(filePath);
+    return this.files.find((f) => this.normalize(f.path) === norm);
+  }
+
+  /** Из resourceUri дерева получить относительный путь файла или null */
+  getFilePathFromUri(uri: vscode.Uri): string | null {
+    if (!this.repoRoot) return null;
+    const prefix = path.join(this.repoRoot, ChangedFilesTreeProvider.VIRTUAL_PREFIX);
+    const fsPath = path.normalize(uri.fsPath);
+    if (!fsPath.startsWith(prefix + path.sep) && fsPath !== prefix) return null;
+    const relative = fsPath.slice(prefix.length).replace(/^[/\\]/, "").replace(/\\/g, "/");
+    return relative || null;
   }
 }
 
@@ -1061,18 +1194,36 @@ async function handleApiRequest(
             if (!list.includes(short)) {list.push(short);}
           }
         }
-        const webviewCommits: WebviewCommit[] = commits.map((c) => ({
-          hash: c.hash,
-          shortHash: c.hash.slice(0, 8),
-          message: c.message,
-          author: c.authorName ?? "",
-          authorEmail: c.authorEmail,
-          date: formatDate(c.authorDate),
-          dateRelative: formatDateRelative(c.authorDate),
-          branches: refsByCommit.get(c.hash) ?? undefined,
-          isMerge: (c.parents?.length ?? 0) > 1,
-          parents: c.parents?.map((p) => p.slice(0, 8)),
-        }));
+        const cwd = repo.rootUri.fsPath;
+        const originUrl = getRemoteOriginUrl(cwd);
+        const parsed = originUrl ? parseRemoteUrl(originUrl) : null;
+        let avatarByHash = new Map<string, string>();
+        let avatarByEmail = new Map<string, string>();
+        if (parsed?.host === "github") {
+          avatarByHash = await fetchGitHubCommitAvatars(parsed.owner, parsed.repo, ref);
+        } else if (parsed?.host === "gitlab") {
+          const emails = [...new Set(commits.map((c) => c.authorEmail?.trim().toLowerCase()).filter((e): e is string => Boolean(e)))];
+          avatarByEmail = await fetchGitLabAvatarsByEmail(parsed.baseUrl, emails);
+        }
+        const webviewCommits: WebviewCommit[] = commits.map((c) => {
+          const fromHost =
+            avatarByHash.get(c.hash) ??
+            avatarByHash.get(c.hash.slice(0, 8)) ??
+            (c.authorEmail ? avatarByEmail.get(c.authorEmail.trim().toLowerCase()) : undefined);
+          return {
+            hash: c.hash,
+            shortHash: c.hash.slice(0, 8),
+            message: c.message,
+            author: c.authorName ?? "",
+            authorEmail: c.authorEmail,
+            authorAvatarUrl: fromHost,
+            date: formatDate(c.authorDate),
+            dateRelative: formatDateRelative(c.authorDate),
+            branches: refsByCommit.get(c.hash) ?? undefined,
+            isMerge: (c.parents?.length ?? 0) > 1,
+            parents: c.parents?.map((p) => p.slice(0, 8)),
+          };
+        });
         return { data: webviewCommits };
       }
       case "getChangedFiles": {
@@ -1358,11 +1509,15 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
               DiffSide.New,
             );
             const title = `${path.basename(newPath || oldPath)} (${fromHash === DIFF_UNCOMMITTED ? "working" : fromHash.slice(0, 7)} ↔ ${toHash === DIFF_UNCOMMITTED ? "working" : toHash.slice(0, 7)})`;
+            const diffOptions = (p.openInNewTab as boolean)
+              ? { viewColumn: vscode.ViewColumn.Beside }
+              : undefined;
             void vscode.commands.executeCommand(
               "vscode.diff",
               leftUri,
               rightUri,
               title,
+              diffOptions,
             );
           } else if (msg.command === "viewFileAtRevision") {
             const hash = typeof p.hash === "string" ? p.hash : "HEAD";
@@ -1382,6 +1537,115 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
               DiffSide.New,
             );
             void vscode.window.showTextDocument(uri);
+          } else if (msg.command === "openWorkingFile") {
+            const filePath = typeof p.filePath === "string" ? p.filePath : "";
+            if (!filePath) {
+              return;
+            }
+            const fullPath = path.join(repoRoot, filePath);
+            const uri = vscode.Uri.file(fullPath);
+            void vscode.window.showTextDocument(uri);
+          } else if (msg.command === "revertWorkingFile") {
+            const filePath = typeof p.filePath === "string" ? p.filePath : "";
+            if (!filePath) {
+              return;
+            }
+            try {
+              execSync(`git checkout -- ${JSON.stringify(filePath)}`, {
+                cwd: repoRoot,
+                encoding: "utf8",
+              });
+              this.notifyGitStateChanged();
+            } catch (err) {
+              log.errorException(err, "revertWorkingFile");
+              const errMsg = err instanceof Error ? err.message : String(err);
+              void vscode.window.showErrorMessage(errMsg);
+            }
+          } else if (msg.command === "getFileFromRevision") {
+            const commitHash = typeof p.commitHash === "string" ? p.commitHash.trim() : "";
+            const filePath = typeof p.filePath === "string" ? p.filePath : "";
+            if (!commitHash || !filePath) {
+              return;
+            }
+            try {
+              execSync(`git checkout ${JSON.stringify(commitHash)} -- ${JSON.stringify(filePath)}`, {
+                cwd: repoRoot,
+                encoding: "utf8",
+              });
+              this.notifyGitStateChanged();
+            } catch (err) {
+              log.errorException(err, "getFileFromRevision");
+              const errMsg = err instanceof Error ? err.message : String(err);
+              void vscode.window.showErrorMessage(errMsg);
+            }
+          } else if (msg.command === "createPatchForFile") {
+            const commitHash = typeof p.commitHash === "string" ? p.commitHash.trim() : "";
+            const filePath = typeof p.filePath === "string" ? p.filePath : "";
+            const oldFilePath = typeof p.oldFilePath === "string" ? p.oldFilePath : filePath;
+            if (!commitHash || !filePath) {
+              return;
+            }
+            try {
+              let parent: string;
+              try {
+                parent = execSync(`git rev-parse ${JSON.stringify(commitHash + "^")}`, {
+                  cwd: repoRoot,
+                  encoding: "utf8",
+                }).trim();
+              } catch {
+                parent = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+              }
+              const patch = execSync(
+                `git diff ${JSON.stringify(parent)} ${JSON.stringify(commitHash)} -- ${JSON.stringify(oldFilePath)} ${JSON.stringify(filePath)}`,
+                { cwd: repoRoot, encoding: "utf8", maxBuffer: 2 * 1024 * 1024 },
+              );
+              const doc = await vscode.workspace.openTextDocument({
+                content: patch,
+                language: "diff",
+              });
+              void vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside });
+            } catch (err) {
+              log.errorException(err, "createPatchForFile");
+              const errMsg = err instanceof Error ? err.message : String(err);
+              void vscode.window.showErrorMessage(errMsg);
+            }
+          } else if (msg.command === "cherryPickFile") {
+            const commitHash = typeof p.commitHash === "string" ? p.commitHash.trim() : "";
+            const filePath = typeof p.filePath === "string" ? p.filePath : "";
+            if (!commitHash || !filePath) {
+              return;
+            }
+            try {
+              execSync(`git checkout ${JSON.stringify(commitHash)} -- ${JSON.stringify(filePath)}`, {
+                cwd: repoRoot,
+                encoding: "utf8",
+              });
+              this.notifyGitStateChanged();
+            } catch (err) {
+              log.errorException(err, "cherryPickFile");
+              const errMsg = err instanceof Error ? err.message : String(err);
+              void vscode.window.showErrorMessage(errMsg);
+            }
+          } else if (msg.command === "fileHistoryUpToCommit") {
+            const commitHash = typeof p.commitHash === "string" ? p.commitHash.trim() : "";
+            const filePath = typeof p.filePath === "string" ? p.filePath : "";
+            if (!commitHash || !filePath) {
+              return;
+            }
+            const fullPath = path.join(repoRoot, filePath);
+            const uri = vscode.Uri.file(fullPath);
+            void vscode.commands.executeCommand(
+              "git.viewFileHistory",
+              uri,
+              commitHash,
+            ).then(
+              () => {},
+              () => {
+                void vscode.window.showInformationMessage(
+                  "Git: View File History may not be available. Try Timeline or Git History extension.",
+                );
+              },
+            );
           } else if (msg.command === "checkoutBranch") {
             const branchRef = typeof p.branchRef === "string" ? p.branchRef : "";
             if (!branchRef) {
@@ -1874,7 +2138,6 @@ function runActivate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(gitHeadWatcher);
 
-  const treeProvider = new GitForgeTreeProvider();
   const changedFilesDecorationProvider = new ChangedFilesDecorationProvider();
   context.subscriptions.push(
     vscode.window.registerFileDecorationProvider(changedFilesDecorationProvider),
@@ -1927,31 +2190,27 @@ function runActivate(context: vscode.ExtensionContext): void {
   gitRefsWatcher.onDidCreate(setupGitStateWatchers);
   gitRefsWatcher.onDidDelete(setupGitStateWatchers);
   context.subscriptions.push(gitRefsWatcher);
-  // Боковая панель (Activity Bar) — при открытии автоматически показываем вкладку Git Forge внизу
-  const sidebarTreeView = vscode.window.createTreeView(
-    "vs-git-forge.gitForgeSidebarView",
-    {
-      treeDataProvider: treeProvider,
-    },
-  );
-  sidebarTreeView.onDidChangeVisibility((e) => {
-    if (e.visible) {
-      void vscode.commands.executeCommand("vs-git-forge.gitForgeView.focus");
-    }
-  });
-  // При старте редактора: если раздел Git Forge в Activity Bar уже открыт — открыть вкладку внизу
-  if (sidebarTreeView.visible) {
-    void vscode.commands.executeCommand("vs-git-forge.gitForgeView.focus");
-  }
-  context.subscriptions.push(sidebarTreeView);
+  /** Подстроить ширину вкладок панели: дать больше места Git Forge, меньше — Changed Files (нативное API). */
+  const applyPanelViewSize = (): void => {
+    const steps = vscode.workspace
+      .getConfiguration("gitForge")
+      .get<number>("panelViewSizeSteps", 4);
+    if (steps <= 0) return;
+    let count = 0;
+    const run = (): void => {
+      if (count >= steps) return;
+      void vscode.commands.executeCommand("workbench.action.increaseViewSize");
+      count += 1;
+      setTimeout(run, 50);
+    };
+    setTimeout(run, 100);
+  };
 
-  // По клику на ветку в статус-баре: открыть раздел Git Forge в Activity Bar и вкладку внизу
+  // По клику на «Git Forge» в статус-баре: открыть вкладку Git Forge внизу (рядом с Терминалом)
   context.subscriptions.push(
     vscode.commands.registerCommand("vs-git-forge.openGitForge", async () => {
-      await vscode.commands.executeCommand(
-        "vs-git-forge.gitForgeSidebarView.focus",
-      );
       await vscode.commands.executeCommand("vs-git-forge.gitForgeView.focus");
+      applyPanelViewSize();
     }),
   );
 
@@ -2040,6 +2299,389 @@ function runActivate(context: vscode.ExtensionContext): void {
         );
       },
     ),
+  );
+
+  const emptyTreeHash = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+  /** Контекст выбранного файла в нативном дереве Changed Files (для контекстного меню) */
+  type ChangedFileContext = {
+    repoRoot: string;
+    commitHash: string;
+    file: WebviewChangedFile;
+    fromHash: string;
+    toHash: string;
+  };
+
+  function getContextFromNode(node: ChangedFileTreeNode): ChangedFileContext | null {
+    if (node.kind !== "file") return null;
+    const file: WebviewChangedFile = {
+      path: node.path,
+      name: node.name,
+      status: node.status ?? "modified",
+      oldPath: node.oldPath,
+    };
+    const repoRoot = changedFilesTreeProvider.getRepoRoot();
+    if (!repoRoot) return null;
+    const commitHash = changedFilesTreeProvider.getCurrentCommitHash();
+    if (!commitHash) return null;
+    const isUncommitted = commitHash === "UNCOMMITTED";
+    const fromHash = isUncommitted
+      ? "HEAD"
+      : (() => {
+          try {
+            return execSync(`git rev-parse ${JSON.stringify(commitHash + "^")}`, {
+              cwd: repoRoot,
+              encoding: "utf8",
+            }).trim();
+          } catch {
+            return emptyTreeHash;
+          }
+        })();
+    const toHash = isUncommitted ? DIFF_UNCOMMITTED : commitHash;
+    return { repoRoot, commitHash, file, fromHash, toHash };
+  }
+
+  function getChangedFileContextFromTree(): ChangedFileContext | null {
+    const sel = changedFilesTreeView.selection as ChangedFileTreeNode[];
+    if (!sel.length) return null;
+    return getContextFromNode(sel[0]);
+  }
+
+  /** Контекст для команд: из аргумента (правый клик) или из текущего выделения */
+  function getChangedFileContext(nodeOrNothing: ChangedFileTreeNode | undefined): ChangedFileContext | null {
+    if (nodeOrNothing !== undefined && nodeOrNothing !== null) {
+      const ctx = getContextFromNode(nodeOrNothing);
+      if (ctx) return ctx;
+    }
+    return getChangedFileContextFromTree();
+  }
+
+  const DOUBLE_CLICK_MS = 400;
+  let lastClickedFile: string | null = null;
+  let lastClickedTime = 0;
+
+  context.subscriptions.push(
+    changedFilesTreeView.onDidChangeSelection((e) => {
+      const sel = e.selection as ChangedFileTreeNode[];
+      if (!sel.length || sel[0].kind !== "file") return;
+      void changedFilesTreeView.reveal(sel[0], { select: true, focus: false });
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "vs-git-forge.changedFileDiffOnDoubleClick",
+      (commitHash: string, filePath: string, status: "added" | "modified" | "deleted", oldPath?: string) => {
+        const now = Date.now();
+        const isDoubleClick =
+          lastClickedFile === filePath && now - lastClickedTime < DOUBLE_CLICK_MS;
+        lastClickedFile = filePath;
+        lastClickedTime = now;
+        if (isDoubleClick) {
+          lastClickedFile = null;
+          void vscode.commands.executeCommand(
+            "vs-git-forge.openChangedFileDiff",
+            commitHash,
+            filePath,
+            status,
+            oldPath,
+          );
+        }
+      },
+    ),
+  );
+
+  function registerChangedFileContextCommand(
+    id: string,
+    run: (ctx: ChangedFileContext) => void | Promise<void>,
+  ): void {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(id, async (node: ChangedFileTreeNode | undefined) => {
+        const ctx = getChangedFileContext(node);
+        if (!ctx) return;
+        if (node !== undefined && node !== null) {
+          await changedFilesTreeView.reveal(node, { select: true, focus: true });
+        }
+        await run(ctx);
+      }),
+    );
+  }
+
+  registerChangedFileContextCommand(
+    "vs-git-forge.changedFileShowDiff",
+    ({ repoRoot, file, fromHash, toHash }) => {
+      const status =
+        file.status === "added"
+          ? GitFileStatus.Added
+          : file.status === "deleted"
+            ? GitFileStatus.Deleted
+            : GitFileStatus.Modified;
+      const oldPath = file.oldPath ?? file.path;
+      const leftUri = encodeDiffDocUri(
+        repoRoot,
+        oldPath,
+        fromHash,
+        status,
+        DiffSide.Old,
+        toHash,
+      );
+      const rightUri = encodeDiffDocUri(
+        repoRoot,
+        file.path,
+        toHash,
+        status,
+        DiffSide.New,
+      );
+      const title = `${path.basename(file.path)} (${fromHash.slice(0, 7)} ↔ ${toHash === DIFF_UNCOMMITTED ? "working" : toHash.slice(0, 7)})`;
+      void vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title);
+    },
+  );
+
+  registerChangedFileContextCommand(
+    "vs-git-forge.changedFileShowDiffNewTab",
+    ({ repoRoot, file, fromHash, toHash }) => {
+      const status =
+        file.status === "added"
+          ? GitFileStatus.Added
+          : file.status === "deleted"
+            ? GitFileStatus.Deleted
+            : GitFileStatus.Modified;
+      const oldPath = file.oldPath ?? file.path;
+      const leftUri = encodeDiffDocUri(
+        repoRoot,
+        oldPath,
+        fromHash,
+        status,
+        DiffSide.Old,
+        toHash,
+      );
+      const rightUri = encodeDiffDocUri(
+        repoRoot,
+        file.path,
+        toHash,
+        status,
+        DiffSide.New,
+      );
+      const title = `${path.basename(file.path)} (${fromHash.slice(0, 7)} ↔ ${toHash === DIFF_UNCOMMITTED ? "working" : toHash.slice(0, 7)})`;
+      void vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title, {
+        viewColumn: vscode.ViewColumn.Beside,
+      });
+    },
+  );
+
+  registerChangedFileContextCommand(
+    "vs-git-forge.changedFileCompareWithLocal",
+    (ctx) => {
+      if (ctx.commitHash === "UNCOMMITTED") return;
+      const status =
+        ctx.file.status === "added"
+          ? GitFileStatus.Added
+          : ctx.file.status === "deleted"
+            ? GitFileStatus.Deleted
+            : GitFileStatus.Modified;
+      const oldPath = ctx.file.oldPath ?? ctx.file.path;
+      const leftUri = encodeDiffDocUri(
+        ctx.repoRoot,
+        oldPath,
+        ctx.commitHash,
+        status,
+        DiffSide.Old,
+        DIFF_UNCOMMITTED,
+      );
+      const rightUri = encodeDiffDocUri(
+        ctx.repoRoot,
+        ctx.file.path,
+        DIFF_UNCOMMITTED,
+        status,
+        DiffSide.New,
+      );
+      const title = `${path.basename(ctx.file.path)} (${ctx.commitHash.slice(0, 7)} ↔ working)`;
+      void vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title);
+    },
+  );
+
+  registerChangedFileContextCommand(
+    "vs-git-forge.changedFileCompareBeforeWithLocal",
+    (ctx) => {
+      if (ctx.commitHash === "UNCOMMITTED") return;
+      const status =
+        ctx.file.status === "added"
+          ? GitFileStatus.Added
+          : ctx.file.status === "deleted"
+            ? GitFileStatus.Deleted
+            : GitFileStatus.Modified;
+      const oldPath = ctx.file.oldPath ?? ctx.file.path;
+      const leftUri = encodeDiffDocUri(
+        ctx.repoRoot,
+        oldPath,
+        ctx.fromHash,
+        status,
+        DiffSide.Old,
+        DIFF_UNCOMMITTED,
+      );
+      const rightUri = encodeDiffDocUri(
+        ctx.repoRoot,
+        ctx.file.path,
+        DIFF_UNCOMMITTED,
+        status,
+        DiffSide.New,
+      );
+      const title = `${path.basename(ctx.file.path)} (before ↔ working)`;
+      void vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title);
+    },
+  );
+
+  registerChangedFileContextCommand("vs-git-forge.changedFileEditSource", async (ctx) => {
+    if (ctx.file.status === "deleted") return;
+    const fullPath = path.join(ctx.repoRoot, ctx.file.path);
+    if (!fs.existsSync(fullPath)) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("changedFile.editSource.fileNotFound", path.basename(ctx.file.path)),
+      );
+      return;
+    }
+    const uri = vscode.Uri.file(fullPath);
+    try {
+      await vscode.window.showTextDocument(uri, { preserveFocus: false });
+    } catch (err) {
+      log.errorException(err, "changedFileEditSource");
+      void vscode.window.showErrorMessage(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  });
+
+  registerChangedFileContextCommand(
+    "vs-git-forge.changedFileOpenRepoVersion",
+    (ctx) => {
+      if (ctx.commitHash === "UNCOMMITTED") return;
+      const status =
+        ctx.file.status === "deleted"
+          ? GitFileStatus.Deleted
+          : GitFileStatus.Modified;
+      const uri = encodeDiffDocUri(
+        ctx.repoRoot,
+        ctx.file.path,
+        ctx.commitHash,
+        status,
+        DiffSide.New,
+      );
+      void vscode.window.showTextDocument(uri);
+    },
+  );
+
+  registerChangedFileContextCommand("vs-git-forge.changedFileRevert", (ctx) => {
+    if (ctx.commitHash !== "UNCOMMITTED") return;
+    try {
+      execSync(`git checkout -- ${JSON.stringify(ctx.file.path)}`, {
+        cwd: ctx.repoRoot,
+        encoding: "utf8",
+      });
+      gitForgeProvider.notifyGitStateChanged();
+    } catch (err) {
+      log.errorException(err, "changedFileRevert");
+      void vscode.window.showErrorMessage(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  });
+
+  registerChangedFileContextCommand("vs-git-forge.changedFileCherryPick", (ctx) => {
+    if (ctx.commitHash === "UNCOMMITTED") return;
+    try {
+      execSync(`git checkout ${JSON.stringify(ctx.commitHash)} -- ${JSON.stringify(ctx.file.path)}`, {
+        cwd: ctx.repoRoot,
+        encoding: "utf8",
+      });
+      gitForgeProvider.notifyGitStateChanged();
+    } catch (err) {
+      log.errorException(err, "changedFileCherryPick");
+      void vscode.window.showErrorMessage(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  });
+
+  registerChangedFileContextCommand("vs-git-forge.changedFileCreatePatch", async (ctx) => {
+    if (ctx.commitHash === "UNCOMMITTED") return;
+    try {
+      const patch = execSync(
+        `git diff ${JSON.stringify(ctx.fromHash)} ${JSON.stringify(ctx.commitHash)} -- ${JSON.stringify(ctx.file.oldPath ?? ctx.file.path)} ${JSON.stringify(ctx.file.path)}`,
+        { cwd: ctx.repoRoot, encoding: "utf8", maxBuffer: 2 * 1024 * 1024 },
+      );
+      const doc = await vscode.workspace.openTextDocument({
+        content: patch,
+        language: "diff",
+      });
+      void vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside });
+    } catch (err) {
+      log.errorException(err, "changedFileCreatePatch");
+      void vscode.window.showErrorMessage(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  });
+
+  registerChangedFileContextCommand("vs-git-forge.changedFileGetFromRevision", (ctx) => {
+    if (ctx.commitHash === "UNCOMMITTED") return;
+    try {
+      execSync(`git checkout ${JSON.stringify(ctx.commitHash)} -- ${JSON.stringify(ctx.file.path)}`, {
+        cwd: ctx.repoRoot,
+        encoding: "utf8",
+      });
+      gitForgeProvider.notifyGitStateChanged();
+    } catch (err) {
+      log.errorException(err, "changedFileGetFromRevision");
+      void vscode.window.showErrorMessage(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  });
+
+  registerChangedFileContextCommand("vs-git-forge.changedFileHistoryUpToHere", (ctx) => {
+    if (ctx.commitHash === "UNCOMMITTED") return;
+    const uri = vscode.Uri.file(path.join(ctx.repoRoot, ctx.file.path));
+    void vscode.commands
+      .executeCommand("git.viewFileHistory", uri, ctx.commitHash)
+      .then(
+        () => {},
+        () => {
+          void vscode.window.showInformationMessage(
+            vscode.l10n.t("editCommit.onlyHead").replace(/.*/, "Git: View File History may not be available."),
+          );
+        },
+      );
+  });
+
+  registerChangedFileContextCommand(
+    "vs-git-forge.changedFileShowChangesToParents",
+    (ctx) => {
+      if (ctx.commitHash === "UNCOMMITTED") return;
+      const status =
+        ctx.file.status === "added"
+          ? GitFileStatus.Added
+          : ctx.file.status === "deleted"
+            ? GitFileStatus.Deleted
+            : GitFileStatus.Modified;
+      const oldPath = ctx.file.oldPath ?? ctx.file.path;
+      const leftUri = encodeDiffDocUri(
+        ctx.repoRoot,
+        oldPath,
+        ctx.fromHash,
+        status,
+        DiffSide.Old,
+        ctx.commitHash,
+      );
+      const rightUri = encodeDiffDocUri(
+        ctx.repoRoot,
+        ctx.file.path,
+        ctx.commitHash,
+        status,
+        DiffSide.New,
+      );
+      const title = `${path.basename(ctx.file.path)} (parent ↔ ${ctx.commitHash.slice(0, 7)})`;
+      void vscode.commands.executeCommand("vscode.diff", leftUri, rightUri, title);
+    },
   );
 
   const cmdDisposable = vscode.commands.registerCommand(

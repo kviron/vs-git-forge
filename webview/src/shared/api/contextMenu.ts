@@ -11,6 +11,8 @@ export interface ContextMenuAction {
   readonly icon?: string;
   /** Горячая клавиша (например "Ctrl+Alt+C"). Пока оставь пустым — место под shortcut зарезервировано. */
   readonly shortcut?: string;
+  /** Неактивный пункт (серый, без вызова onClick). */
+  readonly disabled?: boolean;
 }
 
 export type ContextMenuActions = ReadonlyArray<ReadonlyArray<ContextMenuAction>>;
@@ -37,15 +39,25 @@ export class ContextMenu {
     log.debug("ContextMenu: создан экземпляр, подписка на document click/contextmenu");
     const listener = (e: Event) => {
       const target = e.target as HTMLElement;
-      log.debug("ContextMenu: document listener вызван", e.type, "target:", target?.className);
-      // Не закрывать по contextmenu, если клик по элементу, из которого открывается меню
-      // (событие может всплыть до document до/после show(), из-за чего меню сразу закрывалось)
-      if (
+      const isFileItem = target?.closest?.(".changed-files__item");
+      const skipClose =
         e.type === "contextmenu" &&
         (target?.closest?.(".branch-list-item") ||
           target?.closest?.(".commit-list-item") ||
-          target?.closest?.(".tag-list-item"))
-      ) {
+          target?.closest?.(".tag-list-item") ||
+          isFileItem);
+      log.debug(
+        "ContextMenu: document listener",
+        e.type,
+        "targetClass:",
+        target?.className,
+        "changed-files__item:",
+        !!isFileItem,
+        "skipClose:",
+        skipClose,
+      );
+      // Не закрывать по contextmenu, если клик по элементу, из которого открывается меню
+      if (skipClose) {
         return;
       }
       this.close();
@@ -67,7 +79,8 @@ export class ContextMenu {
     container: HTMLElement,
     onClose?: () => void
   ): void {
-    log.debug("ContextMenu: show() вызван, visible actions:", actions.flat().filter((a) => a.visible).length);
+    const visibleCount = actions.flat().filter((a) => a.visible).length;
+    log.debug("ContextMenu: show() вызван, visible actions:", visibleCount, "position:", event.clientX, event.clientY);
     let html = "";
     const handlers: Array<() => void> = [];
     let handlerId = 0;
@@ -80,8 +93,10 @@ export class ContextMenu {
         if (action.visible) {
           const iconContent = action.icon ?? "";
           const shortcutContent = escapeHtml(action.shortcut ?? "");
-          groupHtml += `<li class="contextMenuItem" data-index="${handlerId++}"><span class="contextMenuItem__icon">${iconContent}</span><span class="contextMenuItem__label">${escapeHtml(action.title)}</span><span class="contextMenuItem__shortcut">${shortcutContent}</span></li>`;
-          handlers.push(action.onClick);
+          const disabledClass = action.disabled ? " contextMenuItem--disabled" : "";
+          groupHtml += `<li class="contextMenuItem${disabledClass}" data-index="${handlerId++}" data-disabled="${action.disabled ? "1" : "0"}"><span class="contextMenuItem__icon">${iconContent}</span><span class="contextMenuItem__label">${escapeHtml(action.title)}</span><span class="contextMenuItem__shortcut">${shortcutContent}</span></li>`;
+          if (!action.disabled) handlers.push(action.onClick);
+          else handlers.push(() => {});
         }
       }
       if (groupHtml !== "") {
@@ -91,7 +106,7 @@ export class ContextMenu {
     }
 
     if (handlers.length === 0) {
-      log.debug("ContextMenu: show() выход: нет видимых действий");
+      log.debug("ContextMenu: show() выход: нет видимых действий (handlers.length=0)");
       return;
     }
 
@@ -123,11 +138,15 @@ export class ContextMenu {
 
     this.elem = menu;
     this.onClose = onClose ?? null;
-    log.debug("ContextMenu: show() меню добавлено в DOM");
+    log.debug("ContextMenu: show() меню добавлено в DOM, left:", left, "top:", top);
 
     menu.addEventListener("click", (e) => {
       const item = (e.target as HTMLElement).closest(".contextMenuItem");
       if (item instanceof HTMLElement) {
+        if (item.dataset.disabled === "1") {
+          e.stopPropagation();
+          return;
+        }
         const index = item.dataset.index;
         if (index !== undefined) {
           e.stopPropagation();

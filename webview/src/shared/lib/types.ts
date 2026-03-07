@@ -45,6 +45,8 @@ export interface Commit {
   message: string;
   author: string;
   authorEmail?: string;
+  /** URL аватарки с хоста (GitHub/GitLab по remote), если есть */
+  authorAvatarUrl?: string;
   date: string;
   dateRelative?: string;
   branches?: string[];
@@ -62,4 +64,6 @@ export interface ChangedFile {
   path: string;
   name: string;
   status?: 'added' | 'modified' | 'deleted';
+  /** Старый путь при переименовании (rename) */
+  oldPath?: string;
 }

@@ -118,7 +118,6 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--vscode-sideBar-background, #252526);
-  border-right: 1px solid var(--vscode-panel-border, #444);
 }
 
 .git-view-page__center {
@@ -140,17 +139,25 @@ body {
   display: flex;
   flex-direction: column;
   background: var(--vscode-sideBar-background, #252526);
-  border-left: 1px solid var(--vscode-panel-border, #444);
 }
 
 .git-view-page__resizer {
-  width: 5px;
+  width: 3px;
   flex-shrink: 0;
   cursor: col-resize;
-  background: var(--vscode-panel-border, #444);
+  /* Полоска 3px, цвет только по центру 1px */
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    transparent 1px,
+    var(--vscode-panel-border, #444) 1px,
+    var(--vscode-panel-border, #444) 2px,
+    transparent 2px
+  );
 }
 
 .git-view-page__resizer:hover {
+  /* При наведении заливка на всю ширину 3px */
   background: var(--vscode-focusBorder, #007acc);
 }
 
@@ -979,6 +986,81 @@ body {
   text-align: right;
 }
 
+.commit-list-item__author-trigger {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.commit-list-item__author-trigger:hover {
+  color: var(--vscode-foreground, inherit);
+}
+
+/* Hover card профиля автора коммита */
+.commit-author-hover-card__content {
+  --arrow-background: var(--vscode-editor-background, #1e1e1e);
+  z-index: 1000;
+  min-width: 220px;
+  padding: 0;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-widget-border, #454545);
+  border-radius: 6px;
+  box-shadow: var(--vscode-widget-shadow, 0 2px 8px rgba(0, 0, 0, 0.36));
+}
+
+.commit-author-hover-card__content [data-part="arrow"] {
+  --arrow-size: 8px;
+}
+
+.commit-author-hover-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.commit-author-hover-card__top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.commit-author-hover-card__avatar {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--vscode-descriptionForeground, #858585);
+}
+
+.commit-author-hover-card__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.commit-author-hover-card__name {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-foreground, #fff);
+}
+
+.commit-author-hover-card__email {
+  margin: 0;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, #858585);
+  word-break: break-all;
+}
+
+.commit-author-hover-card__meta {
+  margin: 0;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #858585);
+}
+
 /* ========== Commit Details Panel (right) ========== */
 .commit-details-panel {
   display: flex;
@@ -1211,6 +1293,16 @@ body {
 
 .contextMenuItem:hover {
   background: var(--vscode-list-hoverBackground, #2a2d2e);
+}
+
+.contextMenuItem--disabled {
+  color: var(--vscode-descriptionForeground, #858585);
+  cursor: default;
+  pointer-events: auto;
+}
+
+.contextMenuItem--disabled:hover {
+  background: transparent;
 }
 
 /* Место для иконки слева (фиксированная ширина, выравнивание по центру) */
