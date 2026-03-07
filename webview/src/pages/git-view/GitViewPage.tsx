@@ -1,7 +1,8 @@
-import { createSignal, onMount, useContext } from "solid-js";
-import { vscodeGitApi, VscodeGitApi, postMessageToHost } from "../../shared/api";
+import { createSignal, createMemo, createEffect, onMount, useContext } from "solid-js";
+import { vscodeGitApi, VscodeGitApi, onGitStateChanged, postMessageToHost } from "../../shared/api";
+import { log } from "../../shared/logger";
 import { SelectedBranchContext } from "../../shared/context/SelectedBranchContext";
-import type { Branch, Commit, Tag } from "../../shared/lib/types";
+import type { Branch, Commit, ChangedFile, Tag } from "../../shared/lib/types";
 import { UNCOMMITTED_HASH } from "../../shared/lib/types";
 import { BranchesPane } from "../../widgets/branches-pane";
 import { CommitDetailsPanel } from "../../widgets/commit-details-panel";
@@ -39,6 +40,12 @@ export function GitViewPage() {
   const [commits, setCommits] = createSignal<Commit[]>([]);
   const [commitsLoading, setCommitsLoading] = createSignal(false);
   const [selectedCommit, setSelectedCommit] = createSignal<Commit | null>(null);
+  /** Ref выбранной ветки в фильтре коммитов (null = HEAD) */
+  const [branchFilterRef, setBranchFilterRef] = createSignal<string | null>(null);
+  /** Автор для фильтра коммитов (null = все авторы) */
+  const [userFilter, setUserFilter] = createSignal<string | null>(null);
+  /** Поиск по тексту коммита или hash */
+  const [searchQuery, setSearchQuery] = createSignal("");
 
   const [currentBranch, setCurrentBranch] = createSignal<string>("");
   const [localBranches, setLocalBranches] =
@@ -48,21 +55,76 @@ export function GitViewPage() {
   const [tags, setTags] = createSignal<Tag[]>(EMPTY_TAGS);
   const [branchesLoading, setBranchesLoading] = createSignal(true);
   const [branchesError, setBranchesError] = createSignal<string | null>(null);
+  /** Изменённые файлы выбранного коммита (для обычных коммитов; для UNCOMMITTED не используется) */
+  const [commitChangedFiles, setCommitChangedFiles] = createSignal<ChangedFile[]>([]);
 
   const selectedHash = () => selectedCommit()?.hash ?? null;
 
-  const loadCommits = () => {
+  /** При выборе коммита загружаем список изменённых файлов (для отображения справа) */
+  createEffect(() => {
+    const c = selectedCommit();
+    if (!c || c.hash === UNCOMMITTED_HASH) {
+      setCommitChangedFiles([]);
+      return;
+    }
+    vscodeGitApi
+      .getCommitChangedFiles(c.hash)
+      .then(setCommitChangedFiles)
+      .catch(() => setCommitChangedFiles([]));
+  });
+
+  /** Все ветки плоским списком для фильтра (локальные + удалённые) */
+  const branchesForFilter = createMemo(() => {
+    const local = localBranches();
+    const remote = remoteBranches();
+    const remoteFlat = remote.flatMap((r) => (r.children ?? [r]));
+    return [...local, ...remoteFlat];
+  });
+
+  /** Уникальные авторы из текущего списка коммитов (для фильтра User) */
+  const authorsFromCommits = createMemo(() => {
+    const list = commits();
+    const set = new Set<string>();
+    for (const c of list) {
+      const a = c.author?.trim();
+      if (a) set.add(a);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  });
+
+  /** Коммиты с учётом фильтра по автору и поиску по тексту/hash */
+  const displayCommits = createMemo(() => {
+    let list = commits();
+    const user = userFilter();
+    if (user) {
+      list = list.filter((c) => (c.author?.trim() ?? "") === user);
+    }
+    const q = searchQuery().trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((c) => {
+      const msg = (c.message ?? "").toLowerCase();
+      const hash = (c.hash ?? "").toLowerCase();
+      const shortHash = (c.shortHash ?? "").toLowerCase();
+      return msg.includes(q) || hash.includes(q) || shortHash.includes(q);
+    });
+  });
+
+  /** @param showLoading — при обновлении по gitStateChanged не показываем лоадер */
+  /** @param refOverride — при смене фильтра по ветке передаём ref явно, чтобы не зависеть от обновления сигнала */
+  const loadCommits = (showLoading = true, refOverride?: string | null) => {
     if (!VscodeGitApi.isAvailable()) return;
-    setCommitsLoading(true);
+    if (showLoading) setCommitsLoading(true);
+    const ref = refOverride !== undefined ? (refOverride ?? undefined) : (branchFilterRef() ?? undefined);
     Promise.all([
-      vscodeGitApi.getCommits({ maxEntries: 100 }),
+      vscodeGitApi.getCommits({ maxEntries: 100, ref }),
       vscodeGitApi.getChangedFiles(),
     ])
       .then(([list, changedFiles]) => {
         const arr = Array.isArray(list) ? list : [];
         const uncommittedCount = Array.isArray(changedFiles) ? changedFiles.length : 0;
+        const isViewingHead = ref == null;
         let commitsToShow: Commit[] = arr;
-        if (uncommittedCount > 0) {
+        if (uncommittedCount > 0 && isViewingHead) {
           const firstHash = arr[0]?.shortHash ?? arr[0]?.hash ?? "";
           const uncommitted: Commit = {
             hash: UNCOMMITTED_HASH,
@@ -84,11 +146,17 @@ export function GitViewPage() {
       .catch(() => {
         setCommits([]);
       })
-      .finally(() => setCommitsLoading(false));
+      .finally(() => {
+        if (showLoading) setCommitsLoading(false);
+      });
   };
 
-  const loadBranches = () => {
-    setBranchesLoading(true);
+  /** @param showLoading — при обновлении по gitStateChanged не показываем лоадер, чтобы не было двух перерисовок */
+  const loadBranches = (showLoading = true) => {
+    if (showLoading) {
+      log.debug("GitViewPage: loadBranches начало, setBranchesLoading(true)");
+      setBranchesLoading(true);
+    }
     setBranchesError(null);
     vscodeGitApi
       .getBranches()
@@ -105,7 +173,12 @@ export function GitViewPage() {
         setRemoteBranches(EMPTY_BRANCHES);
         setTags(EMPTY_TAGS);
       })
-      .finally(() => setBranchesLoading(false));
+      .finally(() => {
+        if (showLoading) {
+          log.debug("GitViewPage: loadBranches конец, setBranchesLoading(false)");
+          setBranchesLoading(false);
+        }
+      });
   };
 
   onMount(() => {
@@ -116,7 +189,26 @@ export function GitViewPage() {
     }
     loadBranches();
     loadCommits();
+    const unsubscribe = onGitStateChanged(() => {
+      loadBranches(false); // без лоадера — одна перерисовка когда данные пришли
+      loadCommits(false);
+    });
+    return unsubscribe;
   });
+
+  /** Фильтр по ветке: только одна ветка (ref или null = HEAD). Выбор новой ветки заменяет предыдущую. */
+  const handleBranchFilterChange = (ref: string | null) => {
+    setBranchFilterRef(ref);
+    loadCommits(false, ref);
+  };
+
+  const handleUserFilterChange = (author: string | null) => {
+    setUserFilter(author);
+  };
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+  };
 
   onMount(() => {
     const leftEl = document.getElementById("left-pane");
@@ -222,9 +314,9 @@ export function GitViewPage() {
               localBranches={localBranches()}
               remoteBranches={remoteBranches()}
               tags={tags()}
-              selectedBranch={selectedBranch()}
               selectedTag={selectedTag()}
               onSelectBranch={setSelectedBranch}
+              onBranchDoubleClick={handleBranchFilterChange}
               onSelectTag={setSelectedTag}
               loading={branchesLoading()}
               error={null}
@@ -239,10 +331,20 @@ export function GitViewPage() {
           />
           <main class="git-view-page__center">
             <CommitHistory
-              commits={commits() ?? []}
+              commits={displayCommits() ?? []}
               selectedCommitHash={selectedHash()}
               onSelectCommit={setSelectedCommit}
               loading={commitsLoading()}
+              branches={branchesForFilter()}
+              currentBranchName={currentBranch() || undefined}
+              branchFilterRef={branchFilterRef()}
+              onBranchFilterChange={handleBranchFilterChange}
+              authors={authorsFromCommits()}
+              userFilter={userFilter()}
+              onUserFilterChange={handleUserFilterChange}
+              userLabel={userFilter() ? `User: ${userFilter()}` : "User: Все авторы"}
+              searchQuery={searchQuery()}
+              onSearchChange={handleSearchChange}
             />
           </main>
           <div
@@ -260,7 +362,7 @@ export function GitViewPage() {
               changedFiles={
                 selectedCommit()?.hash === UNCOMMITTED_HASH
                   ? (selectedCommit()?.uncommittedFiles ?? [])
-                  : []
+                  : commitChangedFiles()
               }
               repoName="clubm8-web"
             />

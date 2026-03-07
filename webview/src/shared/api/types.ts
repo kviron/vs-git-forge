@@ -24,9 +24,11 @@ export type ApiMethod =
   | 'getTags'
   | 'getCommits'
   | 'getChangedFiles'
+  | 'getCommitChangedFiles'
   | 'getRepositoryRoot'
   | 'initRepo'
   | 'showCreateBranchDialog'
+  | 'showCreateTagDialog'
   | 'pullBranch';
 
 /** Ответ getBranches / getLocalBranches / getRemoteBranches */

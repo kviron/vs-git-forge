@@ -1,9 +1,14 @@
 /**
  * Жизненный цикл расширения при старте: первый запуск (install), обновление (update), обычный запуск.
- * По идее vscode-git-graph startup.ts, без телеметрии — только определение этапа и сохранение версии.
+ * По образцу vscode-git-graph startup.ts — без телеметрии; состояние сохраняется в globalState и в файл (для uninstall).
  */
 
 import * as vscode from "vscode";
+import {
+  getDataDirectory,
+  saveLifeCycleStateInDirectory,
+  type LifeCycleState as FileLifeCycleState,
+} from "./utils";
 
 const GLOBAL_STATE_KEY = "vs-git-forge.lifecycle";
 
@@ -45,10 +50,21 @@ function saveState(
   context.globalState.update(GLOBAL_STATE_KEY, state);
 }
 
+/** Сохранить состояние в globalState и в файлы (globalStorage + директория расширения), как в vscode-git-graph. */
+async function persistLifeCycleState(
+  context: vscode.ExtensionContext,
+  state: FileLifeCycleState,
+): Promise<void> {
+  saveState(context, state);
+  await Promise.all([
+    saveLifeCycleStateInDirectory(context.globalStoragePath, state),
+    saveLifeCycleStateInDirectory(getDataDirectory(), state),
+  ]);
+}
+
 /**
  * Запускать при activate. Определяет: первый запуск (install), обновление (update) или обычный старт (startup),
- * сохраняет текущую версию в globalState.
- * Ничего никуда не отправляет — только локальное состояние.
+ * сохраняет текущую версию в globalState и в файлы (для uninstall).
  *
  * @param context контекст расширения
  * @param options.skipInDevelopmentHost если true, в Extension Development Host всегда возвращаем startup (без install/update)
@@ -61,24 +77,25 @@ export function runStartupLifecycle(
   const stored = getStoredState(context);
 
   if (options?.skipInDevelopmentHost && isExtensionDevelopmentHost()) {
-    if (stored) {
-      saveState(context, { ...stored, currentVersion });
-    } else {
-      saveState(context, { currentVersion });
-    }
+    const state = stored
+      ? { ...stored, currentVersion }
+      : { currentVersion };
+    void persistLifeCycleState(context, state);
     return { stage: "startup", currentVersion };
   }
 
   if (stored === undefined) {
-    saveState(context, { currentVersion });
+    const state = { currentVersion };
+    void persistLifeCycleState(context, state);
     return { stage: "install", currentVersion };
   }
 
   if (stored.currentVersion !== currentVersion) {
-    saveState(context, {
+    const state = {
       currentVersion,
       previousVersion: stored.currentVersion,
-    });
+    };
+    void persistLifeCycleState(context, state);
     return {
       stage: "update",
       previousVersion: stored.currentVersion,

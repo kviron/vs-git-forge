@@ -1,3 +1,4 @@
+import { createEffect } from 'solid-js';
 import type { JSX } from 'solid-js';
 
 interface IconButtonProps {
@@ -13,13 +14,21 @@ interface IconButtonProps {
   children?: JSX.Element;
 }
 
+/** В HTML наличие атрибута disabled (в т.ч. disabled="false") отключает кнопку. Управляем им через effect. */
 export function IconButton(props: IconButtonProps) {
+  let ref: HTMLButtonElement | undefined;
+  createEffect(() => {
+    if (ref) {
+      if (props.disabled) ref.setAttribute('disabled', '');
+      else ref.removeAttribute('disabled');
+    }
+  });
   return (
     <button
+      ref={(el) => { ref = el; }}
       type="button"
       class={`icon-btn ${props.active ? 'active' : ''} ${props.class ?? ''}`}
       title={props.title}
-      disabled={props.disabled}
       onClick={props.onClick}
       aria-label={props.title}
     >

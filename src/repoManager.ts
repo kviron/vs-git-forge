@@ -5,6 +5,7 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
+import { log } from "./logger";
 
 // --- Минимальные типы встроенного Git API (vscode.git) ---
 export const GitRefTypeTag = 2;
@@ -46,7 +47,7 @@ export interface GitRepository {
     token?: vscode.CancellationToken,
   ): Promise<GitBranch[]>;
   getRefs?(query?: { pattern?: string | string[] }): Promise<GitRef[]>;
-  log(options?: { maxEntries?: number; ref?: string }): Promise<GitCommit[]>;
+  log(options?: { maxEntries?: number; ref?: string; refNames?: string[] }): Promise<GitCommit[]>;
 }
 export interface GitAPI {
   readonly repositories: ReadonlyArray<GitRepository>;
@@ -77,7 +78,8 @@ export async function getGitApi(): Promise<GitAPI | null> {
     return ext.isActive
       ? ext.exports.getAPI(1)
       : (await ext.activate()).getAPI(1);
-  } catch {
+  } catch (e) {
+    log.errorException(e, "getGitApi: расширение vscode.git недоступно");
     return null;
   }
 }

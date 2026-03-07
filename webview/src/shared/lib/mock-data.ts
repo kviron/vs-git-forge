@@ -3,7 +3,7 @@ import type { Branch, Commit, ChangedFile } from './types';
 export const MOCK_LOCAL_BRANCHES: Branch[] = [
   { name: 'MP-8857_edit_create_project_2', isCurrent: false },
   { name: 'master', isCurrent: true, isFavorite: true },
-  { name: 'MP-8853_add_validation', isSelected: true },
+  { name: 'MP-8853_add_validation' },
   { name: 'MP-8857_edit_create_project', isCurrent: false },
 ];
 

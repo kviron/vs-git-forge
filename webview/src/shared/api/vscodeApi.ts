@@ -45,11 +45,20 @@ function genRequestId(): string {
   return `req_${++nextRequestId}_${Date.now()}`;
 }
 
+const gitStateChangedListeners = new Set<() => void>();
+
 /** Слушатель ответов от extension (один раз на всё приложение) */
 function initMessageListener() {
-  window.addEventListener("message", (event: MessageEvent<ApiResponse>) => {
+  window.addEventListener("message", async (event: MessageEvent<ApiResponse | { type: "gitStateChanged" }>) => {
     const msg = event.data;
-    if (!msg || msg.type !== "response" || !msg.requestId) {
+    if (!msg) return;
+    if (msg.type === "gitStateChanged") {
+      const { log } = await import("../logger");
+      log.debug("vscodeApi: gitStateChanged получен, вызов listeners:", gitStateChangedListeners.size);
+      gitStateChangedListeners.forEach((cb) => cb());
+      return;
+    }
+    if (msg.type !== "response" || !("requestId" in msg) || !msg.requestId) {
       return;
     }
     const entry = pending.get(msg.requestId);
@@ -63,6 +72,18 @@ function initMessageListener() {
       entry.resolve(msg.data);
     }
   });
+}
+
+/**
+ * Подписаться на уведомления об изменении состояния Git (новый коммит, смена ветки и т.д.).
+ * @returns функция отписки
+ */
+export function onGitStateChanged(callback: () => void): () => void {
+  ensureListener();
+  gitStateChangedListeners.add(callback);
+  return () => {
+    gitStateChangedListeners.delete(callback);
+  };
 }
 
 let listenerInited = false;
@@ -128,16 +149,24 @@ export class VscodeGitApi {
   }
 
   /**
-   * История коммитов текущей ветки (HEAD).
+   * История коммитов для указанной ветки или HEAD.
    * @param maxEntries — максимум записей (по умолчанию 100)
+   * @param ref — ref ветки (refs/heads/name или refs/remotes/origin/name), по умолчанию HEAD
    */
-  getCommits(params?: { maxEntries?: number }): Promise<Commit[]> {
+  getCommits(params?: { maxEntries?: number; ref?: string }): Promise<Commit[]> {
     return request<Commit[]>("getCommits", params);
   }
 
   /** Изменённые файлы (working tree + index) */
   getChangedFiles(): Promise<ChangedFile[]> {
     return request<ChangedFilesPayload>("getChangedFiles").then((p) => p.files);
+  }
+
+  /** Изменённые файлы в указанном коммите */
+  getCommitChangedFiles(commitHash: string): Promise<ChangedFile[]> {
+    return request<ChangedFilesPayload>("getCommitChangedFiles", {
+      commitHash,
+    }).then((p) => p.files);
   }
 
   /** Корень репозитория (путь) или null */
@@ -156,13 +185,35 @@ export class VscodeGitApi {
   }
 
   /**
-   * Показать диалог создания новой ветки из выбранной.
+   * Показать диалог создания новой ветки из выбранной ветки.
    * @param sourceBranchName — имя/ref выделенной ветки для заголовка и как ref для git (например "main" или "origin/feature")
    * @returns имя созданной ветки или null при отмене
    */
   showCreateBranchDialog(sourceBranchName: string): Promise<string | null> {
     return request<string | null>("showCreateBranchDialog", {
       sourceBranchName,
+    });
+  }
+
+  /**
+   * Показать диалог создания новой ветки из указанного коммита (по hash).
+   * @param commitHash — полный hash коммита
+   * @returns имя созданной ветки или null при отмене
+   */
+  showCreateBranchFromCommit(commitHash: string): Promise<string | null> {
+    return request<string | null>("showCreateBranchDialog", {
+      sourceCommitHash: commitHash,
+    });
+  }
+
+  /**
+   * Показать диалог создания тега на указанном коммите (revision).
+   * @param commitHash — полный hash коммита
+   * @returns имя созданного тега или null при отмене
+   */
+  showCreateTagDialog(commitHash: string): Promise<string | null> {
+    return request<string | null>("showCreateTagDialog", {
+      commitHash,
     });
   }
 

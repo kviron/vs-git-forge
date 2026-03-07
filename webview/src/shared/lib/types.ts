@@ -1,16 +1,31 @@
-/** Ветка (локальная или удалённая) */
-export interface Branch {
+/** Upstream ветки (откуда тянем pull) */
+export interface BranchUpstream {
+  remote: string;
   name: string;
+}
+
+/** Ветка (локальная или удалённая). Поля соответствуют данным из VS Code Git API и getBranches. */
+export interface Branch {
+  /** Отображаемое имя (короткое: master, или remote/name для удалённых) */
+  name: string;
+  /** Полное имя ref (refs/heads/master, refs/remotes/origin/feature) */
+  refName?: string;
+  /** Хеш коммита, на который указывает ветка */
+  commit?: string;
+  /** Имя remote для удалённой ветки (origin и т.д.) */
   remote?: string;
   isCurrent?: boolean;
   /** Главная ветка репозитория (master/main) — отображается со звёздочкой */
   isMain?: boolean;
   isFavorite?: boolean;
-  isSelected?: boolean;
-  /** Локальная ветка отстаёт от remote на N коммитов (для кнопки Update selected) */
+  /** Локальная ветка отстаёт от upstream на N коммитов (для кнопки Update selected) */
   behind?: number;
+  /** Локальная ветка впереди upstream на N коммитов (из Git API) */
+  ahead?: number;
   /** У локальной ветки настроен upstream (можно делать pull) */
   hasUpstream?: boolean;
+  /** Upstream: remote + имя ветки на remote */
+  upstream?: BranchUpstream;
   children?: Branch[];
 }
 

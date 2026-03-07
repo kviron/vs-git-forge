@@ -5,6 +5,7 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
+import { log } from "./logger";
 
 /** Сторона в сравнении: старая (до) или новая (после). */
 export const enum DiffSide {
@@ -67,6 +68,7 @@ export class DiffDocProvider implements vscode.TextDocumentContentProvider {
         return contents;
       })
       .catch((err: unknown) => {
+        log.errorException(err, "DiffDocProvider: загрузка файла для сравнения");
         const msg = err instanceof Error ? err.message : String(err);
         void vscode.window.showErrorMessage(
           "Не удалось загрузить файл для сравнения: " + msg,

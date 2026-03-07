@@ -24,8 +24,34 @@
       {
         "command": "vs-git-forge.createBranch",
         "title": "Git Forge: Создать ветку"
+      },
+      {
+        "command": "vs-git-forge.createBranchFromContext",
+        "title": "Создать ветку из этой"
+      },
+      {
+        "command": "vs-git-forge.checkoutBranchFromContext",
+        "title": "Checkout"
       }
     ],
+    "menus": {
+      "webview/context": [
+        {
+          "command": "vs-git-forge.createBranchFromContext",
+          "when": "webviewSection == 'branch-list-item'"
+        },
+        {
+          "command": "vs-git-forge.checkoutBranchFromContext",
+          "when": "webviewSection == 'branch-list-item'"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "vs-git-forge.createBranchFromContext",
+          "when": "false"
+        }
+      ]
+    },
     "viewsContainers": {
       "panel": [
         {
@@ -73,6 +99,9 @@
     "check-types": "tsc --noEmit",
     "lint": "eslint src",
     "test": "vscode-test"
+  },
+  "dependencies": {
+    "@vscode/codicons": "^0.0.36"
   },
   "devDependencies": {
     "@types/vscode": "^1.109.0",

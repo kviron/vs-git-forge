@@ -1,6 +1,5 @@
 import { createSignal } from 'solid-js';
 import type { Branch, Tag } from '../../shared/lib/types';
-import { withSelectedBranches } from '../../shared/lib/branch';
 import { BranchesPaneToolbar } from '../../features/branches-pane-toolbar';
 import { BranchList } from '../../features/branch-list';
 import { TagList } from '../../features/tag-list';
@@ -39,9 +38,10 @@ interface BranchesPaneProps {
   localBranches: Branch[];
   remoteBranches: Branch[];
   tags: Tag[];
-  selectedBranch?: Branch | null;
   selectedTag?: Tag | null;
   onSelectBranch?: (branch: Branch) => void;
+  /** Двойной клик по ветке — установить фильтр коммитов по этой ветке (ref: refs/heads/… или refs/remotes/…) */
+  onBranchDoubleClick?: (branchRef: string) => void;
   onSelectTag?: (tag: Tag) => void;
   onCollapse?: () => void;
   loading?: boolean;
@@ -49,6 +49,11 @@ interface BranchesPaneProps {
   onInitRepo?: () => void;
   /** Вызов после успешного pull ветки — обновить список веток */
   onBranchesRefresh?: () => void;
+}
+
+/** Текущая ветка (HEAD) как объект — для контекстного меню «Merge into / Compare with» когда в списке ничего не выбрано. */
+function getCurrentBranchObject(localBranches: Branch[]): Branch | null {
+  return localBranches.find((b) => b.isCurrent) ?? null;
 }
 
 export function BranchesPane(props: BranchesPaneProps) {
@@ -89,14 +94,22 @@ export function BranchesPane(props: BranchesPaneProps) {
           <>
             <BranchList
               title="Local"
-              branches={withSelectedBranches(filteredLocal(), props.selectedBranch ?? null)}
+              branches={filteredLocal()}
+              currentBranch={getCurrentBranchObject(props.localBranches)}
               onSelectBranch={props.onSelectBranch}
+              onBranchDoubleClick={props.onBranchDoubleClick}
+              onBranchesRefresh={props.onBranchesRefresh}
             />
-            <BranchList
-              title="Remote"
-              branches={withSelectedBranches(filteredRemote(), props.selectedBranch ?? null)}
-              onSelectBranch={props.onSelectBranch}
-            />
+            {props.remoteBranches.length > 0 && (
+              <BranchList
+                title="Remote"
+                branches={filteredRemote()}
+                currentBranch={getCurrentBranchObject(props.localBranches)}
+                onSelectBranch={props.onSelectBranch}
+                onBranchDoubleClick={props.onBranchDoubleClick}
+                onBranchesRefresh={props.onBranchesRefresh}
+              />
+            )}
             <TagList
               tags={filteredTags()}
               selectedTag={props.selectedTag ?? null}
