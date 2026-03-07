@@ -1,8 +1,8 @@
 import { createSignal, onMount, useContext } from "solid-js";
 import { vscodeGitApi, VscodeGitApi, postMessageToHost } from "../../shared/api";
 import { SelectedBranchContext } from "../../shared/context/SelectedBranchContext";
-import { MOCK_CHANGED_FILES } from "../../shared/lib/mock-data";
 import type { Branch, Commit, Tag } from "../../shared/lib/types";
+import { UNCOMMITTED_HASH } from "../../shared/lib/types";
 import { BranchesPane } from "../../widgets/branches-pane";
 import { CommitDetailsPanel } from "../../widgets/commit-details-panel";
 import { CommitHistory } from "../../widgets/commit-history";
@@ -54,12 +54,32 @@ export function GitViewPage() {
   const loadCommits = () => {
     if (!VscodeGitApi.isAvailable()) return;
     setCommitsLoading(true);
-    vscodeGitApi
-      .getCommits({ maxEntries: 100 })
-      .then((list) => {
+    Promise.all([
+      vscodeGitApi.getCommits({ maxEntries: 100 }),
+      vscodeGitApi.getChangedFiles(),
+    ])
+      .then(([list, changedFiles]) => {
         const arr = Array.isArray(list) ? list : [];
-        setCommits(arr);
-        setSelectedCommit(arr[0] ?? null);
+        const uncommittedCount = Array.isArray(changedFiles) ? changedFiles.length : 0;
+        let commitsToShow: Commit[] = arr;
+        if (uncommittedCount > 0) {
+          const firstHash = arr[0]?.shortHash ?? arr[0]?.hash ?? "";
+          const uncommitted: Commit = {
+            hash: UNCOMMITTED_HASH,
+            shortHash: "",
+            message: `Uncommitted Changes (${uncommittedCount})`,
+            author: "",
+            date: "",
+            dateRelative: "",
+            branches: [],
+            isMerge: false,
+            parents: firstHash ? [firstHash] : [],
+            uncommittedFiles: changedFiles,
+          };
+          commitsToShow = [uncommitted, ...arr];
+        }
+        setCommits(commitsToShow);
+        setSelectedCommit(commitsToShow[0] ?? null);
       })
       .catch(() => {
         setCommits([]);
@@ -237,7 +257,11 @@ export function GitViewPage() {
           >
             <CommitDetailsPanel
               commit={selectedCommit()}
-              changedFiles={MOCK_CHANGED_FILES}
+              changedFiles={
+                selectedCommit()?.hash === UNCOMMITTED_HASH
+                  ? (selectedCommit()?.uncommittedFiles ?? [])
+                  : []
+              }
               repoName="clubm8-web"
             />
           </aside>

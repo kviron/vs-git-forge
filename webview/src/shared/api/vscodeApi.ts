@@ -188,3 +188,35 @@ export function postMessageToHost(message: unknown): void {
   const api = getVsCodeApi();
   api?.postMessage(message);
 }
+
+/** Параметры для открытия Diff (две ревизии файла). */
+export interface ViewDiffParams {
+  fromHash: string;
+  toHash: string;
+  oldFilePath: string;
+  newFilePath: string;
+  type: "added" | "modified" | "deleted";
+}
+
+/** Параметры для открытия файла в ревизии. */
+export interface ViewFileAtRevisionParams {
+  hash: string;
+  filePath: string;
+  type?: "added" | "modified" | "deleted";
+}
+
+/**
+ * Открыть встроенный Diff View: сравнение двух ревизий файла.
+ * По образцу vscode-git-graph (viewDiff).
+ */
+export function sendViewDiff(params: ViewDiffParams): void {
+  postMessageToHost({ type: "command", command: "viewDiff", params });
+}
+
+/**
+ * Открыть файл в указанной ревизии в редакторе.
+ * По образцу vscode-git-graph (viewFileAtRevision).
+ */
+export function sendViewFileAtRevision(params: ViewFileAtRevisionParams): void {
+  postMessageToHost({ type: "command", command: "viewFileAtRevision", params });
+}

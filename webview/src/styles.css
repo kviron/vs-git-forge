@@ -731,28 +731,132 @@ body {
   min-height: 120px;
 }
 
-/* ========== Commit list ========== */
-.commit-history__list {
+/* ========== Commit list (граф встроен в таблицу, ховер строки заходит под граф) ========== */
+.commit-history__body {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+
+.commit-history__graph-wrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: 72px;
+  padding: 0 4px;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.commit-history__graph-wrap .commit-graph-node {
+  pointer-events: auto;
+}
+
+.commit-history__list {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
   padding: 0;
+}
+
+.commit-graph {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.commit-graph-tooltip {
+  position: absolute;
+  z-index: 100;
+  display: none;
+  transform: translateY(-50%);
+  min-width: 180px;
+  max-width: 320px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--vscode-foreground, #cccccc);
+  background: var(--vscode-editorWidget-background, #252526);
+  border: 1px solid;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+}
+
+.commit-graph-tooltip__title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.commit-graph-tooltip__row {
+  margin-top: 4px;
+}
+
+.commit-graph-tooltip__label {
+  color: var(--vscode-descriptionForeground, #858585);
+  margin-right: 4px;
+}
+
+.commit-graph-tooltip__pill {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 0 2px 2px 0;
+  font-size: 11px;
+  color: var(--vscode-badge-foreground, #fff);
+  background: var(--vscode-badge-background, #4d4d4d);
+  border-radius: 10px;
+}
+
+.commit-graph__container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.commit-graph__container .commit-graph-svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.commit-graph__container .commit-graph-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.commit-graph__container .commit-graph-node {
+  stroke: none;
+}
+
+.commit-graph__container .commit-graph-node--current,
+.commit-graph__container .commit-graph-node--uncommitted {
+  stroke-width: 2px;
 }
 
 .commit-list-item {
   display: grid;
-  grid-template-columns: 48px 1fr auto auto;
-  gap: 12px;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
   align-items: center;
-  padding: 6px 12px;
+  padding: 0 10px 0 78px;
+  height: 28px;
   cursor: pointer;
-  font-size: 13px;
-  min-height: 32px;
+  font-size: 12px;
   border: none;
   background: transparent;
   color: inherit;
   width: 100%;
   text-align: left;
+  box-sizing: border-box;
 }
 
 .commit-list-item:hover {
@@ -762,47 +866,6 @@ body {
 .commit-list-item.selected {
   background: var(--vscode-list-activeSelectionBackground, #094771);
   color: var(--vscode-list-activeSelectionForeground, #fff);
-}
-
-.commit-list-item__graph {
-  flex-shrink: 0;
-}
-
-.commit-graph-cell {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 20px;
-}
-
-.commit-graph-cell__line {
-  width: 8px;
-  height: 100%;
-}
-
-.commit-graph-cell__line.dot {
-  border-radius: 50%;
-  background: var(--vscode-charts-green, #89d185);
-  min-width: 8px;
-}
-
-.commit-graph-cell__line.dot.selected,
-.commit-list-item.selected .commit-graph-cell__line.dot {
-  background: var(--vscode-list-activeSelectionForeground, #fff);
-}
-
-.commit-graph-cell__line.line {
-  border-left: 2px solid var(--vscode-charts-blue, #4ec9b0);
-  margin-left: 3px;
-  width: 2px;
-}
-
-.commit-graph-cell__line.merge {
-  border-left: 2px solid var(--vscode-charts-blue, #4ec9b0);
-  margin-left: 3px;
-  width: 2px;
-  height: 50%;
-  align-self: flex-end;
 }
 
 .commit-list-item__message {
@@ -824,8 +887,8 @@ body {
 .commit-list-item__date {
   flex-shrink: 0;
   color: var(--vscode-descriptionForeground, #858585);
-  font-size: 12px;
-  min-width: 100px;
+  font-size: 11px;
+  min-width: 72px;
   text-align: right;
 }
 

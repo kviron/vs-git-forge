@@ -15,6 +15,7 @@ export function CommitDetailsPanel(props: CommitDetailsPanelProps) {
         <ChangedFiles
           repoName={props.repoName}
           files={props.changedFiles}
+          selectedCommitHash={props.commit?.hash ?? null}
         />
       </div>
       <div class="commit-details-panel__details">

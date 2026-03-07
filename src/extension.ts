@@ -2,6 +2,25 @@
 import { execFileSync, execSync } from "child_process";
 import * as path from "path";
 import * as vscode from "vscode";
+import {
+  DiffDocProvider,
+  DiffSide,
+  encodeDiffDocUri,
+  type GetCommitFileFn,
+  GitFileStatus,
+  UNCOMMITTED as DIFF_UNCOMMITTED,
+} from "./diffDocProvider";
+import { runStartupLifecycle } from "./lifecycle/startup";
+import {
+  type GitAPI,
+  type GitBranch,
+  type GitCommit,
+  type GitRef,
+  type GitRepository,
+  getGitApi,
+  GitRefTypeTag,
+  RepoManager,
+} from "./repoManager";
 
 class GitForgeTreeProvider implements vscode.TreeDataProvider<vscode.TreeItem> {
   getChildren(): vscode.TreeItem[] {
@@ -61,21 +80,9 @@ let branchStatusBarSubscribed = false;
 async function initBranchStatusBarFromApi(
   context: vscode.ExtensionContext,
   item: vscode.StatusBarItem,
+  repoManager: RepoManager,
 ): Promise<boolean> {
-  const gitExtension = vscode.extensions.getExtension<{
-    getAPI(version: number): GitAPI;
-  }>("vscode.git");
-  if (!gitExtension) {
-    return false;
-  }
-  let git: GitAPI;
-  try {
-    git = gitExtension.isActive
-      ? gitExtension.exports.getAPI(1)
-      : (await gitExtension.activate()).getAPI(1);
-  } catch {
-    return false;
-  }
+  const git = await repoManager.getGitApi();
   if (!git?.repositories?.length) {
     return false;
   }
@@ -106,123 +113,15 @@ async function initBranchStatusBarFromApi(
 async function initBranchStatusBar(
   context: vscode.ExtensionContext,
   item: vscode.StatusBarItem,
+  repoManager: RepoManager,
 ): Promise<boolean> {
-  const fromApi = await initBranchStatusBarFromApi(context, item);
+  const fromApi = await initBranchStatusBarFromApi(context, item, repoManager);
   if (fromApi) {
     return true;
   }
   const branch = await getBranchFromGitHead();
   updateBranchStatusBar(item, branch);
   return !!branch;
-}
-
-// Минимальные типы для встроенного Git API (vscode.git)
-// RefType: Head=0, RemoteHead=1, Tag=2
-const GitRefTypeTag = 2;
-interface GitRef {
-  readonly type: number;
-  readonly name?: string;
-  readonly commit?: string;
-  readonly remote?: string;
-}
-interface GitBranch extends GitRef {
-  readonly upstream?: { remote: string; name: string };
-  readonly ahead?: number;
-  readonly behind?: number;
-}
-interface GitCommit {
-  readonly hash: string;
-  readonly message: string;
-  readonly parents: string[];
-  readonly authorDate?: Date;
-  readonly authorName?: string;
-  readonly authorEmail?: string;
-}
-interface GitChange {
-  readonly uri: vscode.Uri;
-  readonly status: number;
-}
-interface GitRepositoryState {
-  readonly HEAD?: GitBranch;
-  readonly refs: GitRef[];
-  readonly workingTreeChanges: GitChange[];
-  readonly indexChanges: GitChange[];
-  onDidChange(fn: () => void): vscode.Disposable;
-}
-interface GitRepository {
-  readonly rootUri: vscode.Uri;
-  readonly state: GitRepositoryState;
-  getBranches(
-    query: { remote?: boolean },
-    token?: vscode.CancellationToken,
-  ): Promise<GitBranch[]>;
-  getRefs?(query?: { pattern?: string | string[] }): Promise<GitRef[]>;
-  log(options?: { maxEntries?: number; ref?: string }): Promise<GitCommit[]>;
-}
-interface GitAPI {
-  readonly repositories: ReadonlyArray<GitRepository>;
-  onDidOpenRepository(fn: (repo: GitRepository) => void): vscode.Disposable;
-  init(root: vscode.Uri): Promise<GitRepository>;
-}
-
-/** Получить Git API (или null, если расширение Git недоступно). */
-async function getGitApi(): Promise<GitAPI | null> {
-  const ext = vscode.extensions.getExtension<{
-    getAPI(version: number): GitAPI;
-  }>("vscode.git");
-  if (!ext) {
-    return null;
-  }
-  try {
-    return ext.isActive
-      ? ext.exports.getAPI(1)
-      : (await ext.activate()).getAPI(1);
-  } catch {
-    return null;
-  }
-}
-
-const GIT_REPO_WAIT_TIMEOUT_MS = 5000;
-
-function pickRepoFromList(
-  repos: ReadonlyArray<GitRepository>,
-): GitRepository | null {
-  if (repos.length === 0) return null;
-  if (repos.length === 1) return repos[0] as GitRepository;
-  const activeUri = vscode.window.activeTextEditor?.document?.uri;
-  if (activeUri) {
-    const repo = repos.find((r) => {
-      const root = (r as GitRepository).rootUri.fsPath;
-      const normalized = root + (root.endsWith(path.sep) ? "" : path.sep);
-      return (
-        activeUri.fsPath === root || activeUri.fsPath.startsWith(normalized)
-      );
-    });
-    if (repo) return repo as GitRepository;
-  }
-  return repos[0] as GitRepository;
-}
-
-async function getGitRepo(): Promise<GitRepository | null> {
-  const api = await getGitApi();
-  if (!api) return null;
-
-  const repos = api.repositories ?? [];
-  const picked = pickRepoFromList(repos);
-  if (picked) return picked;
-
-  return new Promise<GitRepository | null>((resolve) => {
-    const timeout = setTimeout(() => {
-      sub.dispose();
-      resolve(null);
-    }, GIT_REPO_WAIT_TIMEOUT_MS);
-
-    const sub = api.onDidOpenRepository((repo) => {
-      clearTimeout(timeout);
-      sub.dispose();
-      resolve(repo as GitRepository);
-    });
-  });
 }
 
 /** Получить теги: через getRefs (если есть) или из state.refs. */
@@ -407,6 +306,7 @@ interface WebviewCommit {
   dateRelative?: string;
   branches?: string[];
   isMerge?: boolean;
+  parents?: string[];
   graphRow?: number[];
 }
 interface WebviewChangedFile {
@@ -736,7 +636,23 @@ async function handleApiRequest(
         const maxEntries = (params?.maxEntries as number) ?? 100;
         const ref = (params?.ref as string) ?? "HEAD";
         const commits = await repo.log({ maxEntries, ref });
-        const headName = repo.state.HEAD?.name;
+        const allRefs = repo.state.refs ?? [];
+        const refsByCommit = new Map<string, string[]>();
+        for (const r of allRefs) {
+          if (r.commit && r.name) {
+            const short = r.name
+              .replace(/^refs\/heads\//, "")
+              .replace(/^refs\/remotes\//, "")
+              .trim();
+            if (!short) continue;
+            let list = refsByCommit.get(r.commit);
+            if (!list) {
+              list = [];
+              refsByCommit.set(r.commit, list);
+            }
+            if (!list.includes(short)) list.push(short);
+          }
+        }
         const webviewCommits: WebviewCommit[] = commits.map((c) => ({
           hash: c.hash,
           shortHash: c.hash.slice(0, 8),
@@ -745,8 +661,9 @@ async function handleApiRequest(
           authorEmail: c.authorEmail,
           date: formatDate(c.authorDate),
           dateRelative: formatDateRelative(c.authorDate),
-          branches: headName ? [headName] : undefined,
+          branches: refsByCommit.get(c.hash) ?? undefined,
           isMerge: (c.parents?.length ?? 0) > 1,
+          parents: c.parents?.map((p) => p.slice(0, 8)),
         }));
         return { data: webviewCommits };
       }
@@ -813,7 +730,10 @@ function getGitForgePanelHtml(
 }
 
 class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly repoManager: RepoManager,
+  ) {}
 
   resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -832,14 +752,75 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
         requestId?: string;
         method?: string;
         params?: Record<string, unknown>;
+        command?: string;
       }) => {
         if (msg.type === "sidebarWidth" && typeof msg.width === "number") {
           this.context.globalState.update(SIDEBAR_WIDTH_KEY, msg.width);
           return;
         }
+        if (msg.type === "command" && msg.command) {
+          const repo = await this.repoManager.getCurrentRepo();
+          if (!repo) {
+            return;
+          }
+          const repoRoot = repo.rootUri.fsPath;
+          const p = msg.params ?? {};
+          if (msg.command === "viewDiff") {
+            const fromHash = typeof p.fromHash === "string" ? p.fromHash : "HEAD";
+            const toHash = typeof p.toHash === "string" ? p.toHash : "HEAD";
+            const oldPath = typeof p.oldFilePath === "string" ? p.oldFilePath : "";
+            const newPath = typeof p.newFilePath === "string" ? p.newFilePath : oldPath;
+            const status =
+              p.type === "added"
+                ? GitFileStatus.Added
+                : p.type === "deleted"
+                  ? GitFileStatus.Deleted
+                  : GitFileStatus.Modified;
+            const leftUri = encodeDiffDocUri(
+              repoRoot,
+              oldPath,
+              fromHash,
+              status,
+              DiffSide.Old,
+            );
+            const rightUri = encodeDiffDocUri(
+              repoRoot,
+              newPath,
+              toHash,
+              status,
+              DiffSide.New,
+            );
+            const title = `${path.basename(newPath || oldPath)} (${fromHash === DIFF_UNCOMMITTED ? "working" : fromHash.slice(0, 7)} ↔ ${toHash === DIFF_UNCOMMITTED ? "working" : toHash.slice(0, 7)})`;
+            void vscode.commands.executeCommand(
+              "vscode.diff",
+              leftUri,
+              rightUri,
+              title,
+            );
+          } else if (msg.command === "viewFileAtRevision") {
+            const hash = typeof p.hash === "string" ? p.hash : "HEAD";
+            const filePath = typeof p.filePath === "string" ? p.filePath : "";
+            if (!filePath) {
+              return;
+            }
+            const type =
+              p.type === "deleted"
+                ? GitFileStatus.Deleted
+                : GitFileStatus.Modified;
+            const uri = encodeDiffDocUri(
+              repoRoot,
+              filePath,
+              hash,
+              type,
+              DiffSide.New,
+            );
+            void vscode.window.showTextDocument(uri);
+          }
+          return;
+        }
         if (msg.type === "request" && msg.requestId && msg.method) {
           const method = msg.method;
-          const repo = method === "initRepo" ? null : await getGitRepo();
+          const repo = method === "initRepo" ? null : await this.repoManager.getCurrentRepo();
           const result = await handleApiRequest(method, msg.params, repo);
           webviewView.webview.postMessage({
             type: "response",
@@ -869,8 +850,44 @@ class GitForgePanelViewProvider implements vscode.WebviewViewProvider {
   }
 }
 
+/** Получить содержимое файла на указанной ревизии (для Diff View). */
+const getCommitFile: GetCommitFileFn = async (repo, commit, filePath) => {
+  const rev = `${commit}:${filePath.replace(/\\/g, "/")}`;
+  const out = execSync(`git show ${JSON.stringify(rev)}`, {
+    cwd: repo,
+    encoding: "utf8",
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  return out;
+};
+
 export function activate(context: vscode.ExtensionContext) {
   console.log('Extension "vs-git-forge" is now active!');
+
+  const lifecycle = runStartupLifecycle(context, {
+    skipInDevelopmentHost: true,
+  });
+  if (lifecycle.stage === "install") {
+    void vscode.window.showInformationMessage(
+      "Git Forge установлен. Откройте панель Git Forge для работы с репозиторием.",
+    );
+  } else if (lifecycle.stage === "update" && lifecycle.previousVersion) {
+    // При желании можно показать «Что нового» или открыть CHANGELOG
+    // void vscode.window.showInformationMessage(
+    //   `Git Forge обновлён до ${lifecycle.currentVersion}`,
+    // );
+  }
+
+  const repoManager = new RepoManager();
+  context.subscriptions.push(repoManager);
+
+  const diffDocProvider = new DiffDocProvider(getCommitFile);
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      DiffDocProvider.scheme,
+      diffDocProvider,
+    ),
+  );
 
   // Статус-бар: иконка + имя ветки (слева внизу)
   const branchStatusBarItem = vscode.window.createStatusBarItem(
@@ -879,7 +896,7 @@ export function activate(context: vscode.ExtensionContext) {
   );
   branchStatusBarItem.command = "vs-git-forge.openGitForge";
   context.subscriptions.push(branchStatusBarItem);
-  void initBranchStatusBar(context, branchStatusBarItem);
+  void initBranchStatusBar(context, branchStatusBarItem, repoManager);
 
   // Обновление из .git/HEAD (для Cursor и когда API недоступен)
   const refreshFromFile = async (): Promise<void> => {
@@ -892,7 +909,7 @@ export function activate(context: vscode.ExtensionContext) {
   gitHeadWatcher.onDidCreate(async () => {
     const tryInit = async (delayMs: number): Promise<boolean> => {
       await new Promise((r) => setTimeout(r, delayMs));
-      return initBranchStatusBar(context, branchStatusBarItem);
+      return initBranchStatusBar(context, branchStatusBarItem, repoManager);
     };
     if (!(await tryInit(800))) {
       await tryInit(2000);
@@ -913,7 +930,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
       "vs-git-forge.gitForgeView",
-      new GitForgePanelViewProvider(context),
+      new GitForgePanelViewProvider(context, repoManager),
     ),
   );
   // Боковая панель (Activity Bar) — при открытии автоматически показываем вкладку Git Forge внизу
@@ -947,7 +964,7 @@ export function activate(context: vscode.ExtensionContext) {
   // Команда «Создать ветку» из палитры (тот же диалог, что по кнопке в webview)
   context.subscriptions.push(
     vscode.commands.registerCommand("vs-git-forge.createBranch", async () => {
-      const repo = await getGitRepo();
+      const repo = await repoManager.getCurrentRepo();
       const result = await handleShowCreateBranchDialog(undefined, repo);
       if (result.error) {
         void vscode.window.showErrorMessage(result.error);

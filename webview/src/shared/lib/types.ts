@@ -20,6 +20,9 @@ export interface Tag {
   commit?: string;
 }
 
+/** Специальный хеш для строки «Uncommitted Changes» в таблице коммитов */
+export const UNCOMMITTED_HASH = "UNCOMMITTED";
+
 /** Коммит для списка и графа */
 export interface Commit {
   hash: string;
@@ -31,8 +34,12 @@ export interface Commit {
   dateRelative?: string;
   branches?: string[];
   isMerge?: boolean;
+  /** Хеши родительских коммитов (для построения графа веток) */
+  parents?: string[];
   /** Индексы линий графа для отрисовки (0 = первая колонка) */
   graphRow?: number[];
+  /** Для строки Uncommitted Changes — список незакоммиченных файлов */
+  uncommittedFiles?: ChangedFile[];
 }
 
 /** Изменённый файл в коммите */
