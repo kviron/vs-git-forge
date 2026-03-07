@@ -26,7 +26,8 @@ export type ApiMethod =
   | 'getChangedFiles'
   | 'getRepositoryRoot'
   | 'initRepo'
-  | 'showCreateBranchDialog';
+  | 'showCreateBranchDialog'
+  | 'pullBranch';
 
 /** Ответ getBranches / getLocalBranches / getRemoteBranches */
 export interface BranchesPayload {

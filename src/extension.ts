@@ -238,6 +238,43 @@ async function getTagRefs(repo: GitRepository): Promise<GitRef[]> {
   return (repo.state.refs ?? []).filter((r) => r.type === GitRefTypeTag);
 }
 
+/** Узнать upstream ветки (например "origin/main"), если настроен. */
+function getBranchUpstreamRef(
+  cwd: string,
+  branchShortName: string,
+): string | undefined {
+  try {
+    const out = execFileSync(
+      "git",
+      ["rev-parse", "-q", "--abbrev-ref", `${branchShortName}@{upstream}`],
+      { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    const ref = out.trim();
+    return ref.length > 0 ? ref : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Сколько коммитов локальная ветка отстаёт от upstream (если API не дал behind). */
+function getBranchBehindCount(
+  cwd: string,
+  branchShortName: string,
+  upstreamRef: string,
+): number | undefined {
+  try {
+    const out = execFileSync(
+      "git",
+      ["rev-list", "--count", `${branchShortName}..${upstreamRef}`],
+      { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    );
+    const n = parseInt(out.trim(), 10);
+    return Number.isNaN(n) ? undefined : n;
+  } catch {
+    return undefined;
+  }
+}
+
 function mapTagRefsToWebview(refs: GitRef[]): WebviewTag[] {
   const list = refs
     .filter((r) => (r.name ?? "").length > 0)
@@ -350,6 +387,10 @@ interface WebviewBranch {
   remote?: string;
   isCurrent?: boolean;
   isMain?: boolean;
+  /** Локальная ветка отстаёт от upstream (remote) на N коммитов — для кнопки Update selected */
+  behind?: number;
+  /** У локальной ветки настроен upstream (можно делать pull) */
+  hasUpstream?: boolean;
   children?: WebviewBranch[];
 }
 interface WebviewTag {
@@ -437,6 +478,43 @@ async function handleShowCreateBranchDialog(
   }
 }
 
+/** Обновить локальную ветку (git pull). Ветка должна отставать от remote. */
+async function handlePullBranch(
+  params: Record<string, unknown> | undefined,
+  repo: GitRepository | null,
+): Promise<{ data?: unknown; error?: string }> {
+  if (!repo) {
+    return { error: "Git-репозиторий не найден." };
+  }
+  const branchName =
+    typeof params?.branchName === "string" ? params.branchName.trim() : "";
+  if (!branchName) {
+    return { error: "Укажите имя ветки." };
+  }
+  const cwd = repo.rootUri.fsPath;
+  try {
+    const headName = repo.state.HEAD?.name ?? "";
+    const currentShort = headName.replace(/^refs\/heads\//, "").trim();
+    if (currentShort !== branchName) {
+      execSync(`git checkout ${JSON.stringify(branchName)}`, {
+        cwd,
+        encoding: "utf8",
+      });
+    }
+    execSync("git pull", { cwd, encoding: "utf8" });
+    if (currentShort !== branchName) {
+      execSync(`git checkout ${JSON.stringify(currentShort)}`, {
+        cwd,
+        encoding: "utf8",
+      });
+    }
+    return { data: { success: true } };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { error: message };
+  }
+}
+
 async function handleApiRequest(
   method: string,
   params: Record<string, unknown> | undefined,
@@ -447,6 +525,9 @@ async function handleApiRequest(
   }
   if (method === "showCreateBranchDialog") {
     return handleShowCreateBranchDialog(params, repo);
+  }
+  if (method === "pullBranch") {
+    return handlePullBranch(params, repo);
   }
   if (!repo) {
     const branch = await getBranchFromGitHead();
@@ -471,7 +552,9 @@ async function handleApiRequest(
     switch (method) {
       case "getCurrentBranch": {
         const name = repo.state.HEAD?.name ?? null;
-        return { data: name };
+        const short =
+          (name ?? "").replace(/^refs\/heads\//, "").trim() || null;
+        return { data: short };
       }
       case "getLocalBranches": {
         const branches = await repo.getBranches({ remote: false });
@@ -479,7 +562,9 @@ async function handleApiRequest(
         const currentShort = (headName ?? "")
           .replace(/^refs\/heads\//, "")
           .trim() || null;
+        const cwd = repo.rootUri.fsPath;
         const local: WebviewBranch[] = branches.map((b) => {
+          const gb = b as GitBranch;
           const shortName = (b.name ?? "").replace(/^refs\/heads\//, "").trim();
           const displayName = shortName || (b.name ?? "");
           const isCurrent =
@@ -487,10 +572,26 @@ async function handleApiRequest(
             (shortName === currentShort || (b.name ?? "") === headName);
           const isMain =
             displayName === "master" || displayName === "main";
+          let behind =
+            gb.behind != null && gb.behind > 0 ? gb.behind : undefined;
+          let hasUpstream = false;
+          const upstreamRef =
+            gb.upstream?.remote != null && gb.upstream?.name != null
+              ? `${gb.upstream.remote}/${gb.upstream.name}`
+              : getBranchUpstreamRef(cwd, displayName);
+          if (upstreamRef) {
+            hasUpstream = true;
+            if (behind === undefined) {
+              const count = getBranchBehindCount(cwd, displayName, upstreamRef);
+              if (count != null && count > 0) behind = count;
+            }
+          }
           return {
             name: displayName,
             isCurrent,
             isMain,
+            ...(behind != null ? { behind } : {}),
+            ...(hasUpstream ? { hasUpstream: true } : {}),
           };
         });
         // Текущая ветка всегда первая в списке Local
@@ -580,7 +681,9 @@ async function handleApiRequest(
         const currentShort = (headName ?? "")
           .replace(/^refs\/heads\//, "")
           .trim() || null;
+        const cwd = repo.rootUri.fsPath;
         const local: WebviewBranch[] = localBranches.map((b) => {
+          const gb = b as GitBranch;
           const shortName = (b.name ?? "").replace(/^refs\/heads\//, "").trim();
           const displayName = shortName || (b.name ?? "");
           const isCurrent =
@@ -588,10 +691,26 @@ async function handleApiRequest(
             (shortName === currentShort || (b.name ?? "") === headName);
           const isMain =
             displayName === "master" || displayName === "main";
+          let behind =
+            gb.behind != null && gb.behind > 0 ? gb.behind : undefined;
+          let hasUpstream = false;
+          const upstreamRef =
+            gb.upstream?.remote != null && gb.upstream?.name != null
+              ? `${gb.upstream.remote}/${gb.upstream.name}`
+              : getBranchUpstreamRef(cwd, displayName);
+          if (upstreamRef) {
+            hasUpstream = true;
+            if (behind === undefined) {
+              const count = getBranchBehindCount(cwd, displayName, upstreamRef);
+              if (count != null && count > 0) behind = count;
+            }
+          }
           return {
             name: displayName,
             isCurrent,
             isMain,
+            ...(behind != null ? { behind } : {}),
+            ...(hasUpstream ? { hasUpstream: true } : {}),
           };
         });
         // Текущая ветка всегда первая в списке Local
@@ -606,7 +725,7 @@ async function handleApiRequest(
         });
         return {
           data: {
-            currentBranch: headName,
+            currentBranch: currentShort ?? headName,
             local,
             remote: remoteList,
             tags,

@@ -47,6 +47,8 @@ interface BranchesPaneProps {
   loading?: boolean;
   error?: string | null;
   onInitRepo?: () => void;
+  /** Вызов после успешного pull ветки — обновить список веток */
+  onBranchesRefresh?: () => void;
 }
 
 export function BranchesPane(props: BranchesPaneProps) {
@@ -57,7 +59,7 @@ export function BranchesPane(props: BranchesPaneProps) {
 
   return (
     <div class="branches-pane">
-      <BranchesPaneToolbar />
+      <BranchesPaneToolbar onBranchesRefresh={props.onBranchesRefresh} />
       <div class="branches-pane__content">
         <div class="branches-pane__search">
           <input

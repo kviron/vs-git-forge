@@ -41,9 +41,22 @@ const TOOLBAR_ITEMS = [
 const ACTIVE_ICON_INDEX = 10;
 /** Индекс кнопки New branch в TOOLBAR_ITEMS */
 const NEW_BRANCH_ICON_INDEX = 1;
+/** Индекс кнопки Update selected в TOOLBAR_ITEMS */
+const UPDATE_SELECTED_ICON_INDEX = 2;
 
-export function BranchesPaneToolbar() {
+interface BranchesPaneToolbarProps {
+  onBranchesRefresh?: () => void;
+}
+
+export function BranchesPaneToolbar(props: BranchesPaneToolbarProps) {
   const { selectedBranch } = useSelectedBranch();
+
+  /** Выбрана локальная ветка с upstream (можно pull); активна в первую очередь когда ветка отстаёт (behind > 0) */
+  const canUpdateSelected = () => {
+    const branch = selectedBranch();
+    if (!branch || branch.remote) return false;
+    return (branch.behind ?? 0) > 0 || branch.hasUpstream === true;
+  };
 
   const handleNewBranch = () => {
     const ref = selectedBranch() ? getBranchId(selectedBranch()!) : '';
@@ -52,18 +65,42 @@ export function BranchesPaneToolbar() {
     });
   };
 
+  const handleUpdateSelected = () => {
+    const branch = selectedBranch();
+    if (!branch || branch.remote) return;
+    if (!branch.hasUpstream && (branch.behind ?? 0) <= 0) return;
+    vscodeGitApi
+      .pullBranch(branch.name)
+      .then(() => {
+        props.onBranchesRefresh?.();
+      })
+      .catch((err) => {
+        console.error('pullBranch:', err);
+      });
+  };
+
   return (
     <div class="branches-pane-toolbar" role="toolbar">
       <For each={[...TOOLBAR_ITEMS]}>
         {(item, index) => {
           const IconComponent = item.icon;
           const isNewBranch = index() === NEW_BRANCH_ICON_INDEX;
+          const isUpdateSelected = index() === UPDATE_SELECTED_ICON_INDEX;
+          const updateEnabled = isUpdateSelected && canUpdateSelected();
+          const onClick = isNewBranch
+            ? handleNewBranch
+            : isUpdateSelected
+              ? updateEnabled
+                ? handleUpdateSelected
+                : undefined
+              : undefined;
           return (
             <IconButton
               iconSlot={<IconComponent size={ICON_SIZE} />}
               title={item.title}
               active={index() === ACTIVE_ICON_INDEX}
-              onClick={isNewBranch ? handleNewBranch : undefined}
+              disabled={isUpdateSelected && !updateEnabled}
+              onClick={onClick}
             />
           );
         }}

@@ -240,6 +240,12 @@ body {
   background: var(--vscode-toolbar-hoverBackground, #2a2d2e);
 }
 
+.branches-pane-toolbar .icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
 .branches-pane-toolbar .icon-btn.active {
   background: var(--vscode-list-activeSelectionBackground, #094771);
   color: var(--vscode-list-activeSelectionForeground, #fff);
@@ -833,13 +839,14 @@ body {
 }
 
 .commit-details-panel__files {
-  flex-shrink: 0;
+  flex: 7 1 0;
+  min-height: 0;
   border-bottom: 1px solid var(--vscode-panel-border, #444);
   overflow: auto;
 }
 
 .commit-details-panel__details {
-  flex: 1;
+  flex: 3 1 0;
   min-height: 0;
   overflow: auto;
   padding: 12px;

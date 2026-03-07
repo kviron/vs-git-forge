@@ -7,6 +7,10 @@ export interface Branch {
   isMain?: boolean;
   isFavorite?: boolean;
   isSelected?: boolean;
+  /** Локальная ветка отстаёт от remote на N коммитов (для кнопки Update selected) */
+  behind?: number;
+  /** У локальной ветки настроен upstream (можно делать pull) */
+  hasUpstream?: boolean;
   children?: Branch[];
 }
 

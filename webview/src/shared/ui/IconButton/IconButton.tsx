@@ -7,6 +7,7 @@ interface IconButtonProps {
   iconSlot?: JSX.Element;
   title: string;
   active?: boolean;
+  disabled?: boolean;
   onClick?: () => void;
   class?: string;
   children?: JSX.Element;
@@ -18,6 +19,7 @@ export function IconButton(props: IconButtonProps) {
       type="button"
       class={`icon-btn ${props.active ? 'active' : ''} ${props.class ?? ''}`}
       title={props.title}
+      disabled={props.disabled}
       onClick={props.onClick}
       aria-label={props.title}
     >

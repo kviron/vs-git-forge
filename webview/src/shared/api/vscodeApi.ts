@@ -166,6 +166,11 @@ export class VscodeGitApi {
     });
   }
 
+  /** Обновить выбранную локальную ветку (git pull). Ветка должна отставать от remote. */
+  pullBranch(branchName: string): Promise<{ success: boolean }> {
+    return request<{ success: boolean }>("pullBranch", { branchName });
+  }
+
   /** Есть ли доступ к VS Code API (мы в webview) */
   static isAvailable(): boolean {
     return (

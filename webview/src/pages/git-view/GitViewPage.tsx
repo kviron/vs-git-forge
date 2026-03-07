@@ -209,6 +209,7 @@ export function GitViewPage() {
               loading={branchesLoading()}
               error={null}
               onInitRepo={undefined}
+              onBranchesRefresh={loadBranches}
             />
           </aside>
           <div
