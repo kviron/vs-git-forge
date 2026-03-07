@@ -1,0 +1,17 @@
+{
+  "name": "vs-git-forge-webview",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "solid-icons": "^1.2.0",
+    "solid-js": "^1.8.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "vite-plugin-solid": "^2.10.0"
+  }
+}
