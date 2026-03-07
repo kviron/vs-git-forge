@@ -3,8 +3,12 @@
   "displayName": "Git Forge",
   "description": "Git UI panel: branches, tags, commit history, diff. Early version.",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kviron/vs-git-forge.git"
+  },
   "engines": {
-    "vscode": ">=1.85.0"
+    "vscode": "^1.109.0"
   },
   "categories": [
     "Other"
