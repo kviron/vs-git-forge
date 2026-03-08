@@ -1,6 +1,10 @@
+.idea/
+
 out
 dist
 release
 node_modules
+
 .vscode-test/
 *.vsix
+*.iml
