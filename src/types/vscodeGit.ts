@@ -55,3 +55,14 @@ export interface RepoChangeEvent {
   readonly repos: GitRepository[];
   readonly numRepos: number;
 }
+
+// --- Дополнительные типы (SCM, URI, timeline) ---
+
+export type { ScmResource } from "./vscode-git.resources";
+export { ScmResourceGroupType } from "./vscode-git.resources.enums";
+export type { ScmStatus } from "./vscode-git.resources.enums";
+export {
+  GIT_URI_SCHEME,
+  getQueryDataFromScmGitUri,
+  type GitUriQuery,
+} from "./vscode-git.uri";

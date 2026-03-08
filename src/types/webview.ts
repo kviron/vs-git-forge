@@ -1,9 +1,7 @@
-/** Статистика коммита для webview. */
-export interface WebviewCommitShortStat {
-  files: number;
-  insertions: number;
-  deletions: number;
-}
+import type { CommitShortStat } from "./vscode-git";
+
+/** Статистика коммита для webview (алиас CommitShortStat из vscode-git). */
+export type WebviewCommitShortStat = CommitShortStat;
 
 /** Ветка для webview — все поля из Ref + Branch (без урезания). */
 export interface WebviewBranch {
