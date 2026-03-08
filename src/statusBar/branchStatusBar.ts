@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { getBranchFromGitHead } from "../api/webviewApi";
+import type { GitForgeApi } from "../api/webviewApi";
 import type { RepoManager } from "../core/repoManager";
 
 let branchStatusBarSubscribed = false;
@@ -50,11 +50,12 @@ export async function initBranchStatusBarFromApi(
   return true;
 }
 
-/** Показывает ветку в статус-баре: сначала API, иначе .git/HEAD. */
+/** Показывает ветку в статус-баре: сначала API, иначе .git/HEAD через gitForgeApi. */
 export async function initBranchStatusBar(
   context: vscode.ExtensionContext,
   item: vscode.StatusBarItem,
   repoManager: RepoManager,
+  gitForgeApi: GitForgeApi,
 ): Promise<boolean> {
   const fromApi = await initBranchStatusBarFromApi(
     context,
@@ -62,7 +63,7 @@ export async function initBranchStatusBar(
     repoManager,
   );
   if (fromApi) return true;
-  const branch = await getBranchFromGitHead();
+  const branch = await gitForgeApi.getBranchFromGitHead();
   updateBranchStatusBar(item, branch);
   return !!branch;
 }

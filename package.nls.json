@@ -18,8 +18,11 @@
   "command.changedFile.historyUpToHere": "History Up to Here",
   "command.changedFile.showChangesToParents": "Show Changes to Parents",
   "viewContainer.panel.title": "Git Forge",
+  "viewContainer.branchDiff.title": "Branch Diff",
   "viewContainer.sidebar.title": "Git Forge",
   "view.gitForge.name": "Git Forge",
   "view.changedFiles.name": "Changed Files",
-  "view.sidebar.name": "Git Forge"
+  "view.branchDiff.name": "Branch Diff",
+  "view.sidebar.name": "Git Forge",
+  "command.branchDiffClose.title": "Close Branch Diff"
 }

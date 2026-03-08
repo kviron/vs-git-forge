@@ -26,10 +26,25 @@ export type ApiMethod =
   | 'getChangedFiles'
   | 'getCommitChangedFiles'
   | 'getRepositoryRoot'
+  | 'getIdeContext'
   | 'initRepo'
   | 'showCreateBranchDialog'
   | 'showCreateTagDialog'
   | 'pullBranch';
+
+/** Распознанный форк IDE: Cursor, VS Code или другой */
+export type IdeFlavor = 'cursor' | 'vscode' | 'other';
+
+/** Контекст IDE: язык, тема, приложение (расширение прокидывает из vscode.env / window) */
+export interface IdeContextPayload {
+  language: string;
+  appName: string;
+  /** Cursor, VS Code или другой форк */
+  ideFlavor: IdeFlavor;
+  appHost: string;
+  colorThemeKind: number; // 1=light, 2=dark, 3=high contrast
+  uiKind: 'desktop' | 'web';
+}
 
 /** Ответ getBranches / getLocalBranches / getRemoteBranches */
 export interface BranchesPayload {

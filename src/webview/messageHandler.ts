@@ -4,14 +4,14 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
-import { handleApiRequest } from "../api/webviewApi";
+import type { GitForgeApi } from "../api/webviewApi";
 import {
   encodeDiffDocUri,
   DiffSide,
   GitFileStatus,
   UNCOMMITTED as DIFF_UNCOMMITTED,
 } from "../diffDocProvider";
-import { runGitSync, getParentCommit } from "../git/shell";
+import { runGitSync, getParentCommit, getDiffNameStatusWorktree } from "../git/shell";
 import { getShortBranchName } from "../git/remote";
 import { GIT_DIFF_MAX_BUFFER } from "../constants";
 import { log } from "../core/logger";
@@ -24,10 +24,12 @@ export interface GitForgePanelProvider {
   setLastContextMenuBranchRef(ref: string | null): void;
   runCreateBranchFromContext(): Promise<void>;
   runCheckoutFromContext(): Promise<void>;
+  getBranchDiffTreeView(): { reveal(): void } | null;
 }
 
 export interface RegisterMessageHandlerDeps {
   repoManager: { getCurrentRepo(): Promise<GitRepository | null> };
+  gitForgeApi: GitForgeApi;
   context: vscode.ExtensionContext;
   changedFilesTreeProvider?: {
     setData(
@@ -37,6 +39,14 @@ export interface RegisterMessageHandlerDeps {
     ): void;
   };
   panelProvider: GitForgePanelProvider;
+  branchDiffTreeProvider?: {
+    setData(
+      repoRoot: string,
+      branchRef: string,
+      currentBranchName?: string,
+    ): void;
+    getReversed(): boolean;
+  };
 }
 
 type WebviewMessage = {
@@ -62,7 +72,14 @@ export function registerWebviewMessageHandler(
   webviewView: vscode.WebviewView,
   deps: RegisterMessageHandlerDeps,
 ): vscode.Disposable {
-  const { repoManager, context, changedFilesTreeProvider, panelProvider } = deps;
+  const {
+    repoManager,
+    gitForgeApi,
+    context,
+    changedFilesTreeProvider,
+    panelProvider,
+    branchDiffTreeProvider,
+  } = deps;
 
   const handleMessage = async (msg: WebviewMessage): Promise<void> => {
     if (msg.type === "webviewLog" && typeof msg.message === "string") {
@@ -463,17 +480,25 @@ export function registerWebviewMessageHandler(
         case "showDiffWithWorkingTree": {
           const branchRef = typeof p.branchRef === "string" ? p.branchRef : "";
           if (!branchRef) break;
+          if (!branchDiffTreeProvider) break;
           await runCmd(async () => {
-            const diffOut = runGitSync(repoRoot, ["diff", branchRef], {
-              maxBuffer: GIT_DIFF_MAX_BUFFER,
-            });
-            const doc = await vscode.workspace.openTextDocument({
-              content: diffOut,
-              language: "diff",
-            });
-            void vscode.window.showTextDocument(doc, {
-              viewColumn: vscode.ViewColumn.Beside,
-            });
+            const currentBranchName =
+              (await gitForgeApi.getBranchFromGitHead()) ?? "HEAD";
+            branchDiffTreeProvider.setData(
+              repoRoot,
+              branchRef,
+              currentBranchName,
+            );
+            await vscode.commands.executeCommand(
+              "workbench.actions.treeView.explorer.collapseAll",
+            ).then(() => undefined, () => undefined);
+            await vscode.commands.executeCommand(
+              "workbench.actions.treeView.outline.collapseAll",
+            ).then(() => undefined, () => undefined);
+            await vscode.commands.executeCommand(
+              "workbench.actions.treeView.timeline.collapseAll",
+            ).then(() => undefined, () => undefined);
+            panelProvider.getBranchDiffTreeView()?.reveal();
           });
           break;
         }
@@ -593,7 +618,7 @@ export function registerWebviewMessageHandler(
         method === "initRepo"
           ? null
           : await repoManager.getCurrentRepo();
-      const result = await handleApiRequest(method, msg.params, repo);
+      const result = await gitForgeApi.request(method, msg.params, repo);
       webviewView.webview.postMessage({
         type: "response",
         requestId: msg.requestId,

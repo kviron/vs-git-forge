@@ -13,6 +13,8 @@ export type {
   BranchesPayload,
   CommitsPayload,
   ChangedFilesPayload,
+  IdeContextPayload,
+  IdeFlavor,
   RepositoryRootPayload,
   InitRepoPayload,
 } from './types';

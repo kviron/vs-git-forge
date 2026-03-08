@@ -5,8 +5,22 @@ function getDateLocale(): string {
   return lang.startsWith("ru") ? "ru-RU" : "en-US";
 }
 
+/** Строки для относительных дат, если l10n не подгрузился */
+function getRelativeDateFallback(locale: string): {
+  yesterday: string;
+  daysAgo: (n: number) => string;
+} {
+  const isRu = locale.startsWith("ru");
+  return {
+    yesterday: isRu ? "Вчера" : "Yesterday",
+    daysAgo: (n) => (isRu ? `${n} дн. назад` : `${n} days ago`),
+  };
+}
+
 export function formatDate(d: Date | undefined): string {
-  if (!d) return "";
+  if (!d) {
+    return "";
+  }
   const locale = getDateLocale();
   return d.toLocaleString(locale, {
     day: "2-digit",
@@ -18,8 +32,11 @@ export function formatDate(d: Date | undefined): string {
 }
 
 export function formatDateRelative(d: Date | undefined): string {
-  if (!d) return "";
+  if (!d) {
+    return "";
+  }
   const locale = getDateLocale();
+  const fallback = getRelativeDateFallback(locale);
   const now = new Date();
   const diff = now.getTime() - d.getTime();
   const days = Math.floor(diff / (24 * 60 * 60 * 1000));
@@ -30,14 +47,18 @@ export function formatDateRelative(d: Date | undefined): string {
     });
   }
   if (days === 1) {
+    const yesterday = vscode.l10n.t("date.yesterday");
+    const label =
+      yesterday === "date.yesterday" ? fallback.yesterday : yesterday;
     return (
-      vscode.l10n.t("date.yesterday") +
+      label +
       " " +
       d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })
     );
   }
   if (days < 7) {
-    return vscode.l10n.t("date.daysAgo", String(days));
+    const daysAgo = vscode.l10n.t("date.daysAgo", String(days));
+    return daysAgo === "date.daysAgo" ? fallback.daysAgo(days) : daysAgo;
   }
   return formatDate(d);
 }

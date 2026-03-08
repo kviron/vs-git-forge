@@ -64,5 +64,8 @@
   "command.changedFile.historyUpToHere": "History Up to Here",
   "command.changedFile.showChangesToParents": "Show Changes to Parents",
   "date.yesterday": "Yesterday",
-  "date.daysAgo": "{0} days ago"
+  "date.daysAgo": "{0} days ago",
+  "diff.noChangesBranchVsWorking": "No differences between branch and working tree.",
+  "branchDiff.oneFile": "1 file",
+  "branchDiff.filesCount": "{0} files"
 }

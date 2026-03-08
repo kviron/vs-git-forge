@@ -118,6 +118,63 @@ export function parseDiffNameStatus(
   return files;
 }
 
+/**
+ * Список файлов, изменённых между ревизией и рабочим деревом (git diff --name-status ref).
+ * Для каждого файла: версия в ref слева, рабочая копия справа.
+ */
+export function getDiffNameStatusWorktree(
+  cwd: string,
+  ref: string,
+): WebviewChangedFile[] {
+  const args = [
+    "diff",
+    "--name-status",
+    "--find-renames",
+    "--diff-filter=AMDR",
+    "-z",
+    ref,
+  ];
+  const out = runGitSync(cwd, args, {
+    encoding: "utf8",
+    maxBuffer: GIT_DIFF_MAX_BUFFER,
+  });
+  const parts = out.split("\0").filter((s) => s.length > 0);
+  const files: WebviewChangedFile[] = [];
+  for (let i = 0; i < parts.length; ) {
+    const statusToken = parts[i];
+    if (!statusToken) {
+      i += 1;
+      continue;
+    }
+    const statusChar = statusToken.slice(0, 1).toUpperCase();
+    const isRename = statusChar === "R";
+    if (isRename && i + 2 < parts.length) {
+      const path1 = parts[i + 1].replace(/\\/g, "/");
+      const path2 = parts[i + 2].replace(/\\/g, "/");
+      i += 3;
+      const pathNorm = path2;
+      const name = pathNorm.split("/").pop() ?? pathNorm;
+      files.push({
+        path: pathNorm,
+        name,
+        status: "modified",
+        oldPath: path1 !== path2 ? path1 : undefined,
+      });
+    } else if (i + 1 < parts.length) {
+      const path1 = parts[i + 1].replace(/\\/g, "/");
+      i += 2;
+      const pathNorm = path1;
+      const name = pathNorm.split("/").pop() ?? pathNorm;
+      const status: "added" | "modified" | "deleted" =
+        statusChar === "A" ? "added" : statusChar === "D" ? "deleted" : "modified";
+      files.push({ path: pathNorm, name, status });
+    } else {
+      i += 1;
+    }
+  }
+  return files;
+}
+
 /** Содержимое файла на ревизии (git show rev:path). */
 export function getCommitFileContent(
   cwd: string,

@@ -4,8 +4,10 @@ import { runGitSync } from "../git/shell";
 import { getShortBranchName } from "../git/remote";
 import { log } from "../core/logger";
 import { handleShowCreateBranchDialog } from "../api/handlers";
+import type { GitForgeApi } from "../api/webviewApi";
 import type { RepoManager } from "../core/repoManager";
 import type { ChangedFilesTreeProvider } from "../tree/changedFilesTree";
+import type { BranchDiffTreeProvider } from "../tree/branchDiffTree";
 import { getGitForgePanelHtml } from "./panelHtml";
 import {
   registerWebviewMessageHandler,
@@ -23,11 +25,31 @@ export class GitForgePanelViewProvider
   lastContextMenuBranchRef: string | null = null;
   private notifyGitStateChangedTimer: ReturnType<typeof setTimeout> | undefined;
 
+  private branchDiffTreeView: vscode.TreeView<unknown> | null = null;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly repoManager: RepoManager,
+    private readonly gitForgeApi: GitForgeApi,
     private readonly changedFilesTreeProvider?: ChangedFilesTreeProvider,
+    private readonly branchDiffTreeProvider?: BranchDiffTreeProvider,
   ) {}
+
+  setBranchDiffTreeView(view: vscode.TreeView<unknown>): void {
+    this.branchDiffTreeView = view;
+  }
+
+  getBranchDiffTreeView(): { reveal(): void } | null {
+    if (!this.branchDiffTreeView) {
+      return null;
+    }
+    const view = this.branchDiffTreeView;
+    return {
+      reveal() {
+        void view.reveal(undefined as unknown);
+      },
+    };
+  }
 
   notifyGitStateChanged(): void {
     if (this.notifyGitStateChangedTimer !== undefined) {
@@ -99,9 +121,11 @@ export class GitForgePanelViewProvider
 
     const msgDisposable = registerWebviewMessageHandler(webviewView, {
       repoManager: this.repoManager,
+      gitForgeApi: this.gitForgeApi,
       context: this.context,
       changedFilesTreeProvider: this.changedFilesTreeProvider,
       panelProvider: this,
+      branchDiffTreeProvider: this.branchDiffTreeProvider,
     });
     this.context.subscriptions.push(msgDisposable);
 

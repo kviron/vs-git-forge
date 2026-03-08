@@ -18,8 +18,11 @@
   "command.changedFile.historyUpToHere": "История до этого коммита",
   "command.changedFile.showChangesToParents": "Показать изменения относительно родителя",
   "viewContainer.panel.title": "Git Forge",
+  "viewContainer.branchDiff.title": "Diff ветки",
   "viewContainer.sidebar.title": "Git Forge",
   "view.gitForge.name": "Git Forge",
   "view.changedFiles.name": "Изменённые файлы",
-  "view.sidebar.name": "Git Forge"
+  "view.branchDiff.name": "Diff ветки",
+  "view.sidebar.name": "Git Forge",
+  "command.branchDiffClose.title": "Закрыть Branch Diff"
 }

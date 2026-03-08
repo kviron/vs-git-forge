@@ -64,5 +64,8 @@
   "command.changedFile.historyUpToHere": "История до этого коммита",
   "command.changedFile.showChangesToParents": "Показать изменения относительно родителя",
   "date.yesterday": "Вчера",
-  "date.daysAgo": "{0} дн. назад"
+  "date.daysAgo": "{0} дн. назад",
+  "diff.noChangesBranchVsWorking": "Нет различий между веткой и рабочим деревом.",
+  "branchDiff.oneFile": "1 файл",
+  "branchDiff.filesCount": "{0} файлов"
 }

@@ -422,7 +422,7 @@ export function ChangedFiles(props: ChangedFilesProps) {
           expandOnClick
           selectionMode="single"
           onSelectionChange={(e) => {
-            const selected = e.value?.[0];
+            const selected = e.selectedValue?.[0];
             if (selected) {
               const file = filesByPath().get(selected);
               if (file) onFileClick(file);

@@ -120,9 +120,36 @@
         "command": "vs-git-forge.changedFileShowChangesToParents",
         "title": "%command.changedFile.showChangesToParents%",
         "icon": "$(git-compare)"
+      },
+      {
+        "command": "vs-git-forge.branchDiffOpenFile",
+        "title": "%command.openChangedFileDiff.title%",
+        "when": "false"
+      },
+      {
+        "command": "vs-git-forge.branchDiffDiffOnDoubleClick",
+        "title": "Open diff on double-click",
+        "when": "false"
+      },
+      {
+        "command": "vs-git-forge.branchDiffSwap",
+        "title": "Swap branches",
+        "when": "false"
+      },
+      {
+        "command": "vs-git-forge.branchDiffClose",
+        "title": "%command.branchDiffClose.title%",
+        "icon": "$(close)"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "vs-git-forge.branchDiffClose",
+          "when": "view == vs-git-forge.branchDiffView",
+          "group": "navigation"
+        }
+      ],
       "view/item/context": [
         {
           "command": "vs-git-forge.changedFileShowDiff",
@@ -203,6 +230,13 @@
       ]
     },
     "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitForgeBranchDiff",
+          "title": "%viewContainer.branchDiff.title%",
+          "icon": "resources/activitybar-diff-icon.svg"
+        }
+      ],
       "panel": [
         {
           "id": "gitForge",
@@ -212,6 +246,13 @@
       ]
     },
     "views": {
+      "gitForgeBranchDiff": [
+        {
+          "id": "vs-git-forge.branchDiffView",
+          "name": "%view.branchDiff.name%",
+          "when": "gitForge.branchDiffActive"
+        }
+      ],
       "gitForge": [
         {
           "type": "webview",

@@ -4,6 +4,7 @@ import type {
   ApiResponse,
   BranchesPayload,
   ChangedFilesPayload,
+  IdeContextPayload,
   RepositoryRootPayload,
 } from "./types";
 
@@ -174,6 +175,11 @@ export class VscodeGitApi {
     return request<RepositoryRootPayload>("getRepositoryRoot").then(
       (p) => p.root,
     );
+  }
+
+  /** Контекст IDE: язык, тема, appName, appHost, uiKind (для локализации и темизации) */
+  getIdeContext(): Promise<IdeContextPayload> {
+    return request<IdeContextPayload>("getIdeContext");
   }
 
   /** Инициализировать Git-репозиторий в текущей папке (или в rootUri, если передан) */
