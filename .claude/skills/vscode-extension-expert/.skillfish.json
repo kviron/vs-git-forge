@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "vscode-extension-expert",
+  "owner": "s-hiraoku",
+  "repo": "vscode-sidebar-terminal",
+  "path": ".claude/skills/vscode-extension-expert",
+  "branch": "main",
+  "sha": "b5ffbd10bf0ea98fc6a52e1dcdf35187bfc969d6",
+  "source": "manual"
+}

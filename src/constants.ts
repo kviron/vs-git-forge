@@ -15,3 +15,18 @@ export const GIT_DIFF_MAX_BUFFER = 2 * 1024 * 1024;
 
 /** Максимальный размер буфера для git show (10 MiB). */
 export const GIT_SHOW_MAX_BUFFER = 10 * 1024 * 1024;
+
+/** Дебаунс (мс) перед отправкой gitStateChanged в webview. */
+export const GIT_STATE_CHANGE_DEBOUNCE_MS = 150;
+
+/** Порог (мс) для определения двойного клика в деревьях и списках. */
+export const DOUBLE_CLICK_THRESHOLD_MS = 400;
+
+/** Задержка (мс) перед первым шагом увеличения размера панели при открытии. */
+export const PANEL_VIEW_SIZE_INITIAL_DELAY_MS = 100;
+
+/** Задержка (мс) между шагами увеличения размера панели. */
+export const PANEL_VIEW_SIZE_STEP_DELAY_MS = 50;
+
+/** Префикс заголовка вкладки diff при сравнении веток. */
+export const BRANCH_DIFF_TAB_TITLE_PREFIX = "\u21C4 Changes: ";

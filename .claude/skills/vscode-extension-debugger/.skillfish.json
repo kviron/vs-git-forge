@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "vscode-extension-debugger",
+  "owner": "s-hiraoku",
+  "repo": "vscode-sidebar-terminal",
+  "path": ".claude/skills/vscode-extension-debugger",
+  "branch": "main",
+  "sha": "eccd01f9940488727d98c984d6bf12f836f71a9a",
+  "source": "manual"
+}

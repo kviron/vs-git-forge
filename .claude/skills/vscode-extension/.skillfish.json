@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "vscode-extension",
+  "owner": "mcclowes",
+  "repo": "lea",
+  "path": ".claude/skills/vscode-extension",
+  "branch": "main",
+  "sha": "aa604cf8f2cbf8fdfa8e5081dc6e16a9513502ac",
+  "source": "manual"
+}

@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "cursor-extension-integration",
+  "owner": "brmbobo",
+  "repo": "web2podcast",
+  "path": ".claude/agents/enterprise-frontend-design/agents/saas-packs/cursor-pack/skills/cursor-extension-integration",
+  "branch": "master",
+  "sha": "525f7c0da64b099d5b0354777edd5e66f0c20ef4",
+  "source": "manual"
+}

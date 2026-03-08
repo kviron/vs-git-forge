@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "vscode-webview-expert",
+  "owner": "s-hiraoku",
+  "repo": "vscode-sidebar-terminal",
+  "path": ".claude/skills/vscode-webview-expert",
+  "branch": "main",
+  "sha": "9d3ed50b3ed021d8c174425390b4128afee6e475",
+  "source": "manual"
+}
