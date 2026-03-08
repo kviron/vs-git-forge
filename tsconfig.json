@@ -1,18 +1,29 @@
 {
 	"compilerOptions": {
-		"module": "Node16",
+		"module": "commonjs",
+		"moduleResolution": "node",
 		"target": "ES2022",
-		"lib": [
-			"ES2022"
-		],
+		"lib": ["ES2022"],
 		"sourceMap": true,
 		"rootDir": "src",
-		"strict": true,   /* enable all strict type-checking options */
+		"strict": true,
+		"skipLibCheck": true,
+		"jsx": "preserve",
+		"jsxImportSource": "solid-js",
+		"baseUrl": ".",
+		"paths": {
+			"@/*": ["src/*"]
+		},
 		/* Additional Checks */
 		// "noImplicitReturns": true, /* Report error when not all code paths in function return a value. */
 		// "noFallthroughCasesInSwitch": true, /* Report errors for fallthrough cases in switch statement. */
 		// "noUnusedParameters": true,  /* Report errors on unused parameters. */
 	},
-	"include": ["src"],
-	"exclude": ["node_modules", "webview"]
+	"include": [
+		"src/extension.ts",
+		"src/constants.ts",
+		"src/types/**/*",
+		"src/host/**/*"
+	],
+	"references": [{ "path": "./tsconfig.webview.json" }]
 }

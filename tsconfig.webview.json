@@ -1,0 +1,17 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"composite": true,
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "bundler"
+	},
+	"include": [
+		"src/app/**/*",
+		"src/entities/**/*",
+		"src/features/**/*",
+		"src/widgets/**/*",
+		"src/views/**/*",
+		"src/shared/**/*"
+	]
+}

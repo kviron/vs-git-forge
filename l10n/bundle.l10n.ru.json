@@ -22,6 +22,7 @@
   "pullBranch.repoNotFound": "Git-репозиторий не найден.",
   "pullBranch.noBranch": "Укажите имя ветки.",
   "createTag.repoNotFound": "Git-репозиторий не найден. Откройте папку с репозиторием.",
+  "createTag.repoNotFoundShort": "Git-репозиторий не найден.",
   "createTag.noCommit": "Не указан коммит для тега.",
   "createTag.title": "Создание тега на коммите {0}",
   "createTag.prompt": "Имя тега",

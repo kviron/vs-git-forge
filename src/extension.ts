@@ -5,34 +5,40 @@
 
 import * as path from "path";
 import * as vscode from "vscode";
-import { handleShowCreateBranchDialog } from "./api/handlers";
-import { GitForgeApi } from "./api/webviewApi";
-import { registerChangedFileCommands } from "./commands/changedFileCommands";
-import { initLogger, log } from "./core/logger";
-import { RepoManager } from "./core/repoManager";
-import { getCommitFile } from "./diff/getCommitFile";
+import { handleShowCreateBranchDialog } from "./host/api/handlers";
+import { GitForgeApi } from "./host/api/webviewApi";
+import { registerChangedFileCommands } from "./host/commands/changedFileCommands";
+import { initLogger, log } from "./host/core/logger";
+import { RepoManager } from "./host/core/repoManager";
+import { getCommitFile } from "./host/diff/getCommitFile";
 import {
   DiffDocProvider,
   DiffSide,
   encodeDiffDocUri,
   GitFileStatus,
-} from "./diffDocProvider";
-import { getShortBranchName } from "./git/remote";
-import { runStartupLifecycle } from "./lifecycle/startup";
-import { runUninstallLifecycle } from "./lifecycle/uninstall";
+} from "./host/diffDocProvider";
+import { getShortBranchName } from "./host/git/remote";
+import { runStartupLifecycle } from "./host/lifecycle/startup";
+import { runUninstallLifecycle } from "./host/lifecycle/uninstall";
+import {
+  BRANCH_DIFF_TAB_TITLE_PREFIX,
+  DOUBLE_CLICK_THRESHOLD_MS,
+  PANEL_VIEW_SIZE_INITIAL_DELAY_MS,
+  PANEL_VIEW_SIZE_STEP_DELAY_MS,
+} from "./constants";
 import {
   initBranchStatusBar,
   updateBranchStatusBar,
-} from "./statusBar/branchStatusBar";
+} from "./host/statusBar/branchStatusBar";
 import {
   BranchDiffDecorationProvider,
   BranchDiffTreeProvider,
-} from "./tree/branchDiffTree";
+} from "./host/tree/branchDiffTree";
 import {
   ChangedFilesDecorationProvider,
   ChangedFilesTreeProvider,
-} from "./tree/changedFilesTree";
-import { GitForgePanelViewProvider } from "./webview/panelProvider";
+} from "./host/tree/changedFilesTree";
+import { GitForgePanelViewProvider } from "./host/panelProvider";
 
 export function activate(context: vscode.ExtensionContext): void {
   initLogger(context);
@@ -204,9 +210,9 @@ function runActivate(context: vscode.ExtensionContext): void {
       }
       void vscode.commands.executeCommand("workbench.action.increaseViewSize");
       count += 1;
-      setTimeout(run, 50);
+      setTimeout(run, PANEL_VIEW_SIZE_STEP_DELAY_MS);
     };
-    setTimeout(run, 100);
+    setTimeout(run, PANEL_VIEW_SIZE_INITIAL_DELAY_MS);
   };
 
   context.subscriptions.push(
@@ -244,7 +250,6 @@ function runActivate(context: vscode.ExtensionContext): void {
     gitForgeProvider,
   });
 
-  const BRANCH_DIFF_DOUBLE_CLICK_MS = 400;
   let lastBranchDiffFile: string | null = null;
   let lastBranchDiffTime = 0;
 
@@ -261,7 +266,7 @@ function runActivate(context: vscode.ExtensionContext): void {
         const now = Date.now();
         const isDoubleClick =
           lastBranchDiffFile === filePath &&
-          now - lastBranchDiffTime < BRANCH_DIFF_DOUBLE_CLICK_MS;
+          now - lastBranchDiffTime < DOUBLE_CLICK_THRESHOLD_MS;
         lastBranchDiffFile = filePath;
         lastBranchDiffTime = now;
         if (isDoubleClick) {
@@ -279,8 +284,6 @@ function runActivate(context: vscode.ExtensionContext): void {
     ),
   );
 
-  const BRANCH_DIFF_TAB_TITLE_PREFIX = "\u21C4 Changes: ";
-
   let lastBranchDiffOpenedFile: {
     repoRoot: string;
     branchRef: string;
@@ -289,6 +292,29 @@ function runActivate(context: vscode.ExtensionContext): void {
     oldPath?: string;
   } | null = null;
 
+  const closeFirstBranchDiffTab = async (): Promise<void> => {
+    const tabGroups = vscode.window.tabGroups;
+    for (const group of tabGroups.all) {
+      for (const tab of group.tabs) {
+        if (tab.label.startsWith(BRANCH_DIFF_TAB_TITLE_PREFIX)) {
+          await tabGroups.close(tab, false);
+          return;
+        }
+      }
+    }
+  };
+
+  const closeAllBranchDiffTabs = async (): Promise<void> => {
+    const tabGroups = vscode.window.tabGroups;
+    for (const group of tabGroups.all) {
+      for (const tab of group.tabs) {
+        if (tab.label.startsWith(BRANCH_DIFF_TAB_TITLE_PREFIX)) {
+          await tabGroups.close(tab, false);
+        }
+      }
+    }
+  };
+
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "vs-git-forge.branchDiffSwap",
@@ -296,18 +322,7 @@ function runActivate(context: vscode.ExtensionContext): void {
         branchDiffTreeProvider.setReversed(
           !branchDiffTreeProvider.getReversed(),
         );
-        const tabGroups = vscode.window.tabGroups;
-        let closed = false;
-        for (const group of tabGroups.all) {
-          if (closed) break;
-          for (const tab of group.tabs) {
-            if (tab.label.startsWith(BRANCH_DIFF_TAB_TITLE_PREFIX)) {
-              await tabGroups.close(tab, false);
-              closed = true;
-              break;
-            }
-          }
-        }
+        await closeFirstBranchDiffTab();
         if (lastBranchDiffOpenedFile) {
           const a = lastBranchDiffOpenedFile;
           await vscode.commands.executeCommand(
@@ -327,14 +342,7 @@ function runActivate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       "vs-git-forge.branchDiffClose",
       async () => {
-        const tabGroups = vscode.window.tabGroups;
-        for (const group of tabGroups.all) {
-          for (const tab of group.tabs) {
-            if (tab.label.startsWith(BRANCH_DIFF_TAB_TITLE_PREFIX)) {
-              await tabGroups.close(tab, false);
-            }
-          }
-        }
+        await closeAllBranchDiffTabs();
         lastBranchDiffOpenedFile = null;
         branchDiffTreeProvider.clear();
       },
@@ -389,18 +397,7 @@ function runActivate(context: vscode.ExtensionContext): void {
         const finalLeft = reversed ? leftUri : rightUri;
         const finalRight = reversed ? rightUri : leftUri;
 
-        const tabGroups = vscode.window.tabGroups;
-        let closed = false;
-        for (const group of tabGroups.all) {
-          if (closed) break;
-          for (const tab of group.tabs) {
-            if (tab.label.startsWith(BRANCH_DIFF_TAB_TITLE_PREFIX)) {
-              await tabGroups.close(tab, false);
-              closed = true;
-              break;
-            }
-          }
-        }
+        await closeFirstBranchDiffTab();
 
         lastBranchDiffOpenedFile = {
           repoRoot,

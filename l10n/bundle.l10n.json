@@ -22,6 +22,7 @@
   "pullBranch.repoNotFound": "Git repository not found.",
   "pullBranch.noBranch": "Specify branch name.",
   "createTag.repoNotFound": "Git repository not found. Open a folder with a repository.",
+  "createTag.repoNotFoundShort": "Git repository not found.",
   "createTag.noCommit": "Commit for tag not specified.",
   "createTag.title": "Create tag on commit {0}",
   "createTag.prompt": "Tag name",

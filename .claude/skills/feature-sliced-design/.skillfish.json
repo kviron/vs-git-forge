@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "feature-sliced-design",
+  "owner": "constellos",
+  "repo": "claude-code-plugins",
+  "path": "plugins/project-context/skills/feature-sliced-design",
+  "branch": "main",
+  "sha": "5967e714cb41b37b0c8cae5c98290b559851d423",
+  "source": "manual"
+}

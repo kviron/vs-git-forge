@@ -20,6 +20,12 @@ export interface WebviewBranch {
   children?: WebviewBranch[];
 }
 
+/** Группа удалённых веток по remote (name = имя remote, children = ветки). */
+export interface WebviewRemoteBranchGroup {
+  name: string;
+  children: WebviewBranch[];
+}
+
 /** Тег для webview — имя, коммит, опционально сообщение аннотированного тега. */
 export interface WebviewTag {
   name: string;
